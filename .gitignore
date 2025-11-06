@@ -10,6 +10,9 @@ yarn-error.log*
 lerna-debug.log*
 .pnpm-debug.log*
 
+#claude
+.claude
+
 # Logs
 logs/
 *.log
