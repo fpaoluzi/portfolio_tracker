@@ -1,0 +1,85 @@
+# ============================================
+# Portfolio Tracker - Git Ignore Rules
+# ============================================
+
+# Node.js
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+lerna-debug.log*
+.pnpm-debug.log*
+
+# Logs
+logs/
+*.log
+pids
+*.pid
+*.seed
+*.pid.lock
+
+# Environment Variables
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+
+# Excel Files (sensitive data)
+*.xlsm
+*.xlsx
+*.xls
+uploads/
+
+# Frontend Build
+frontend/build/
+frontend/dist/
+frontend/.next/
+frontend/out/
+frontend/.cache/
+
+# Backend Build
+backend/build/
+backend/dist/
+
+# Testing
+coverage/
+*.coverage
+.nyc_output
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db
+
+# OS Files
+*.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Desktop.ini
+
+# Backup Files
+*_old.*
+*_OLD.*
+*.backup
+*.bak
+
+# Database Dumps (optional - uncomment if you want to ignore)
+# *.sql
+# *.dump
+
+# Temporary Files
+*.tmp
+.temp/
+tmp/
+
+# Package Manager
+package-lock.json.bak
+yarn.lock.bak

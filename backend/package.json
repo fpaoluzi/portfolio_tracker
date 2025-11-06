@@ -1,0 +1,26 @@
+{
+  "name": "portfolio-tracker-backend",
+  "version": "2.0.0",
+  "description": "Portfolio Tracker Backend API con PostgreSQL - Refactored & Modular",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "nodemon server.js",
+    "import": "node import.js",
+    "setup": "psql -U postgres -d finance -f finance_schema.sql",
+    "old-server": "node server_old.js"
+  },
+  "dependencies": {
+    "axios": "^1.13.2",
+    "cors": "^2.8.5",
+    "express": "^4.18.2",
+    "multer": "^2.0.2",
+    "pg": "^8.11.3",
+    "xlsx": "^0.18.5"
+  },
+  "devDependencies": {
+    "nodemon": "^3.0.1"
+  },
+  "author": "",
+  "license": "MIT"
+}
