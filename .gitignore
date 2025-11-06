@@ -83,3 +83,4 @@ tmp/
 # Package Manager
 package-lock.json.bak
 yarn.lock.bak
+.claude/settings.local.json

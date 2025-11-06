@@ -30,7 +30,8 @@
       "Bash(del gitignore.txt)",
       "Bash(git init:*)",
       "Bash(git add:*)",
-      "Bash(NUL)"
+      "Bash(NUL)",
+      "Bash(git commit -m \"$(cat <<''EOF''\nInitial commit: Portfolio Tracker v2.0 - Refactored & Modular\n\n✨ Complete refactoring from monolithic to modular architecture\n\nBackend:\n- Split 1503-line server.js into 20+ focused modules\n- Implemented MVC-like structure (config, controllers, routes, utils)\n- Created complete performance controller with Yahoo Finance integration\n- Added Average Cost Basis calculation for accurate position tracking\n- Unified 6 SQL files into single finance_schema.sql\n\nFrontend:\n- Modified MonthlyPerformanceChart for explicit data loading\n- Removed auto-loading on mount, added manual trigger buttons\n- Improved loading states with progress indicators\n\nDocumentation:\n- Consolidated 10 MD files into 4 clear documents\n- Created comprehensive README, migration guide, quick start\n- Added refactoring summary with detailed statistics\n\nFeatures:\n✅ Portfolio CRUD with analytics\n✅ Asset management with ISIN lookup\n✅ Transaction tracking with cost basis\n✅ Position views and allocation\n✅ Yahoo Finance price updates\n✅ Monthly performance calculations (live & historical)\n✅ Target allocation management\n\n🚀 Generated with Claude Code (https://claude.com/claude-code)\n\nCo-Authored-By: Claude <noreply@anthropic.com>\nEOF\n)\")"
     ],
     "deny": [],
     "ask": []
