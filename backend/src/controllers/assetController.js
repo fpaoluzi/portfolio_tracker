@@ -66,6 +66,7 @@ async function createAsset(req, res) {
       annual_fees,
       standard_deviation,
       isr,
+      factsheet_url,
     } = req.body;
 
     const result = await pool.query(
@@ -73,8 +74,8 @@ async function createAsset(req, res) {
         isin, ticker, name, asset_type, asset_category, currency,
         country, region, sector, industry, benchmark_index,
         ter, transaction_cost, esg_rating, is_accumulation, description,
-        sharpe_ratio, annual_fees, standard_deviation, isr
-      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20)
+        sharpe_ratio, annual_fees, standard_deviation, isr, factsheet_url
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21)
       RETURNING *`,
       [
         isin,
@@ -97,6 +98,7 @@ async function createAsset(req, res) {
         annual_fees,
         standard_deviation,
         isr,
+        factsheet_url,
       ]
     );
 
@@ -135,6 +137,7 @@ async function updateAsset(req, res) {
       annual_fees,
       standard_deviation,
       isr,
+      factsheet_url,
     } = req.body;
 
     const result = await pool.query(
@@ -144,8 +147,9 @@ async function updateAsset(req, res) {
         benchmark_index = $11, ter = $12, transaction_cost = $13, esg_rating = $14,
         is_accumulation = $15, description = $16,
         sharpe_ratio = $17, annual_fees = $18, standard_deviation = $19, isr = $20,
+        factsheet_url = $21,
         updated_at = CURRENT_TIMESTAMP
-       WHERE asset_id = $21
+       WHERE asset_id = $22
        RETURNING *`,
       [
         isin,
@@ -168,6 +172,7 @@ async function updateAsset(req, res) {
         annual_fees,
         standard_deviation,
         isr,
+        factsheet_url,
         id,
       ]
     );
