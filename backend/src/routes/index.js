@@ -11,6 +11,8 @@ const targetAllocationRoutes = require('./targetAllocationRoutes');
 const priceUpdateRoutes = require('./priceUpdateRoutes');
 const importRoutes = require('./importRoutes');
 const performanceRoutes = require('./performanceRoutes');
+const etfCompositionRoutes = require('./etfCompositionRoutes');
+const compositionAnalysisRoutes = require('./compositionAnalysisRoutes');
 
 const router = express.Router();
 
@@ -41,5 +43,7 @@ router.use('/target-allocations', targetAllocationRoutes);
 router.use('/portfolios', priceUpdateRoutes); // Price updates routes
 router.use('/import', importRoutes);
 router.use('/portfolios', performanceRoutes); // Performance routes
+router.use('/etf-composition', etfCompositionRoutes); // ETF composition routes (scraping, bulk operations)
+router.use('/composition', compositionAnalysisRoutes); // Composition analysis routes (modular with look-through)
 
 module.exports = router;

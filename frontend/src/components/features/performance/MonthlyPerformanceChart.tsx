@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import React, { useState, useEffect } from 'react';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
 import { TrendingUp, Loader2 } from 'lucide-react';
 import { Button } from '@/components/ui';
@@ -128,6 +128,8 @@ export const MonthlyPerformanceChart: React.FC<MonthlyPerformanceChartProps> = (
         const position = data.positions.find(p => p.month_year === month && p.asset_id === assetId);
         if (position) {
           monthData[position.asset_name] = position.value;
+          // Aggiungi anche l'investimento per questo asset
+          monthData[`${position.asset_name} - Investito`] = position.total_invested;
         }
       });
 
@@ -431,17 +433,31 @@ export const MonthlyPerformanceChart: React.FC<MonthlyPerformanceChartProps> = (
                   />
                   {selectedAssets.map((assetId, index) => {
                     const asset = uniqueAssets.find(a => a.asset_id === assetId);
-                    return asset ? (
-                      <Line
-                        key={assetId}
-                        type="monotone"
-                        dataKey={asset.asset_name}
-                        stroke={COLORS[index % COLORS.length]}
-                        strokeWidth={2}
-                        dot={{ fill: COLORS[index % COLORS.length], r: 3 }}
-                        activeDot={{ r: 5 }}
-                      />
-                    ) : null;
+                    if (!asset) return null;
+
+                    return (
+                      <React.Fragment key={assetId}>
+                        {/* Linea del valore corrente */}
+                        <Line
+                          type="monotone"
+                          dataKey={asset.asset_name}
+                          stroke={COLORS[index % COLORS.length]}
+                          strokeWidth={3}
+                          dot={{ fill: COLORS[index % COLORS.length], r: 4 }}
+                          activeDot={{ r: 6 }}
+                        />
+                        {/* Linea dell'investimento (tratteggiata) */}
+                        <Line
+                          type="monotone"
+                          dataKey={`${asset.asset_name} - Investito`}
+                          stroke={COLORS[index % COLORS.length]}
+                          strokeWidth={2}
+                          strokeDasharray="5 5"
+                          dot={{ fill: COLORS[index % COLORS.length], r: 2 }}
+                          activeDot={{ r: 4 }}
+                        />
+                      </React.Fragment>
+                    );
                   })}
                 </LineChart>
               </ResponsiveContainer>

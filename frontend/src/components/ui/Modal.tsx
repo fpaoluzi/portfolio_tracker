@@ -6,12 +6,18 @@ interface ModalProps {
   title: string;
   onClose: () => void;
   children: React.ReactNode;
+  size?: 'default' | 'large';
 }
 
-export const Modal: React.FC<ModalProps> = ({ title, onClose, children }) => {
+export const Modal: React.FC<ModalProps> = ({ title, onClose, children, size = 'default' }) => {
+  const sizeClasses = {
+    default: 'max-w-2xl',
+    large: 'max-w-4xl',
+  };
+
   return (
     <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4">
-      <div className="bg-slate-800 rounded-2xl max-w-2xl w-full max-h-[90vh] overflow-y-auto border border-white/20">
+      <div className={`bg-slate-800 rounded-2xl ${sizeClasses[size]} w-full max-h-[90vh] overflow-y-auto border border-white/20`}>
         <div className="p-6 border-b border-white/10 flex justify-between items-center sticky top-0 bg-slate-800 z-10">
           <h2 className="text-2xl font-bold text-white">{title}</h2>
           <button

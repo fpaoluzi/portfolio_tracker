@@ -8,15 +8,17 @@
     "dev": "nodemon server.js",
     "import": "node import.js",
     "setup": "psql -U postgres -d finance -f finance_schema.sql",
-    "old-server": "node server_old.js"
   },
   "dependencies": {
     "axios": "^1.13.2",
     "cors": "^2.8.5",
     "express": "^4.18.2",
     "multer": "^2.0.2",
+    "ollama": "^0.6.2",
     "pg": "^8.11.3",
-    "xlsx": "^0.18.5"
+    "playwright": "^1.56.1",
+    "xlsx": "^0.18.5",
+    "yahoo-finance2": "^3.10.1"
   },
   "devDependencies": {
     "nodemon": "^3.0.1"

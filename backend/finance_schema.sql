@@ -5,7 +5,7 @@
 -- Dumped from database version 16.0
 -- Dumped by pg_dump version 16.0
 
--- Started on 2025-11-07 09:54:00
+-- Started on 2025-11-10 19:43:55
 
 SET statement_timeout = 0;
 SET lock_timeout = 0;
@@ -27,7 +27,7 @@ CREATE EXTENSION IF NOT EXISTS btree_gist WITH SCHEMA public;
 
 
 --
--- TOC entry 5262 (class 0 OID 0)
+-- TOC entry 5347 (class 0 OID 0)
 -- Dependencies: 3
 -- Name: EXTENSION btree_gist; Type: COMMENT; Schema: -; Owner: 
 --
@@ -44,7 +44,7 @@ CREATE EXTENSION IF NOT EXISTS "uuid-ossp" WITH SCHEMA public;
 
 
 --
--- TOC entry 5263 (class 0 OID 0)
+-- TOC entry 5348 (class 0 OID 0)
 -- Dependencies: 2
 -- Name: EXTENSION "uuid-ossp"; Type: COMMENT; Schema: -; Owner: 
 --
@@ -53,7 +53,7 @@ COMMENT ON EXTENSION "uuid-ossp" IS 'generate universally unique identifiers (UU
 
 
 --
--- TOC entry 321 (class 1255 OID 100192)
+-- TOC entry 328 (class 1255 OID 100192)
 -- Name: create_daily_snapshot(uuid, date); Type: FUNCTION; Schema: public; Owner: postgres
 --
 
@@ -127,7 +127,7 @@ $$;
 ALTER FUNCTION public.create_daily_snapshot(p_portfolio_id uuid, p_date date) OWNER TO postgres;
 
 --
--- TOC entry 290 (class 1255 OID 100190)
+-- TOC entry 297 (class 1255 OID 100190)
 -- Name: update_position_after_transaction(); Type: FUNCTION; Schema: public; Owner: postgres
 --
 
@@ -180,7 +180,7 @@ $$;
 ALTER FUNCTION public.update_position_after_transaction() OWNER TO postgres;
 
 --
--- TOC entry 403 (class 1255 OID 100152)
+-- TOC entry 410 (class 1255 OID 100152)
 -- Name: update_updated_at_column(); Type: FUNCTION; Schema: public; Owner: postgres
 --
 
@@ -231,7 +231,8 @@ CREATE TABLE public.assets (
     standard_deviation numeric(8,4),
     isr integer,
     factsheet_url text,
-    CONSTRAINT assets_asset_type_check CHECK (((asset_type)::text = ANY ((ARRAY['Azionario'::character varying, 'Obbligazionario'::character varying, 'Monetario'::character varying, 'Oro'::character varying, 'Crypto'::character varying, 'ETF'::character varying, 'Fondo'::character varying])::text[]))),
+    composition_last_updated timestamp with time zone,
+    CONSTRAINT assets_asset_type_check CHECK (((asset_type)::text = ANY ((ARRAY['Azionario'::character varying, 'Obbligazionario'::character varying, 'Monetario'::character varying, 'Oro'::character varying, 'Crypto'::character varying, 'ETF'::character varying, 'Fondo'::character varying, 'Azione Singola'::character varying, 'Obbligazione Singola'::character varying])::text[]))),
     CONSTRAINT assets_esg_rating_check CHECK (((esg_rating >= 1) AND (esg_rating <= 10))),
     CONSTRAINT assets_isr_check CHECK (((isr >= 1) AND (isr <= 7))),
     CONSTRAINT isin_format CHECK (((isin)::text ~ '^[A-Z]{2}[A-Z0-9]{9}[0-9]$'::text))
@@ -241,12 +242,21 @@ CREATE TABLE public.assets (
 ALTER TABLE public.assets OWNER TO postgres;
 
 --
--- TOC entry 5264 (class 0 OID 0)
+-- TOC entry 5349 (class 0 OID 0)
 -- Dependencies: 218
 -- Name: TABLE assets; Type: COMMENT; Schema: public; Owner: postgres
 --
 
 COMMENT ON TABLE public.assets IS 'Anagrafica completa di tutti i titoli/asset';
+
+
+--
+-- TOC entry 5350 (class 0 OID 0)
+-- Dependencies: 218
+-- Name: COLUMN assets.composition_last_updated; Type: COMMENT; Schema: public; Owner: postgres
+--
+
+COMMENT ON COLUMN public.assets.composition_last_updated IS 'Timestamp of last successful ETF composition update (holdings, sectors, regions)';
 
 
 --
@@ -273,12 +283,271 @@ CREATE TABLE public.dividends (
 ALTER TABLE public.dividends OWNER TO postgres;
 
 --
--- TOC entry 5265 (class 0 OID 0)
+-- TOC entry 5351 (class 0 OID 0)
 -- Dependencies: 222
 -- Name: TABLE dividends; Type: COMMENT; Schema: public; Owner: postgres
 --
 
 COMMENT ON TABLE public.dividends IS 'Registro dividendi ricevuti';
+
+
+--
+-- TOC entry 231 (class 1259 OID 102257)
+-- Name: etf_asset_allocation; Type: TABLE; Schema: public; Owner: postgres
+--
+
+CREATE TABLE public.etf_asset_allocation (
+    asset_allocation_id uuid DEFAULT public.uuid_generate_v4() NOT NULL,
+    asset_id uuid NOT NULL,
+    allocation_type character varying(50) NOT NULL,
+    weight_percent numeric(5,4) NOT NULL,
+    updated_at timestamp with time zone DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT etf_asset_allocation_allocation_type_check CHECK (((allocation_type)::text = ANY ((ARRAY['Equity'::character varying, 'Bond'::character varying, 'Cash'::character varying, 'Other'::character varying, 'Commodity'::character varying, 'Real Estate'::character varying])::text[]))),
+    CONSTRAINT etf_asset_allocation_weight_percent_check CHECK (((weight_percent >= (0)::numeric) AND (weight_percent <= (1)::numeric)))
+);
+
+
+ALTER TABLE public.etf_asset_allocation OWNER TO postgres;
+
+--
+-- TOC entry 5352 (class 0 OID 0)
+-- Dependencies: 231
+-- Name: TABLE etf_asset_allocation; Type: COMMENT; Schema: public; Owner: postgres
+--
+
+COMMENT ON TABLE public.etf_asset_allocation IS 'Asset class allocation breakdown for ETF assets (Stocks, Bonds, Cash, etc.)';
+
+
+--
+-- TOC entry 5353 (class 0 OID 0)
+-- Dependencies: 231
+-- Name: COLUMN etf_asset_allocation.allocation_type; Type: COMMENT; Schema: public; Owner: postgres
+--
+
+COMMENT ON COLUMN public.etf_asset_allocation.allocation_type IS 'Type of asset class (Equity, Bond, Cash, Other, Commodity, Real Estate)';
+
+
+--
+-- TOC entry 5354 (class 0 OID 0)
+-- Dependencies: 231
+-- Name: COLUMN etf_asset_allocation.weight_percent; Type: COMMENT; Schema: public; Owner: postgres
+--
+
+COMMENT ON COLUMN public.etf_asset_allocation.weight_percent IS 'Percentage weight of asset class in ETF (0-1, e.g., 0.85 = 85%)';
+
+
+--
+-- TOC entry 233 (class 1259 OID 102290)
+-- Name: etf_bond_maturity; Type: TABLE; Schema: public; Owner: postgres
+--
+
+CREATE TABLE public.etf_bond_maturity (
+    bond_maturity_id uuid DEFAULT public.uuid_generate_v4() NOT NULL,
+    asset_id uuid NOT NULL,
+    maturity_range character varying(50) NOT NULL,
+    weight_percent numeric(5,4) NOT NULL,
+    avg_duration_years numeric(6,2),
+    updated_at timestamp with time zone DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT etf_bond_maturity_weight_percent_check CHECK (((weight_percent >= (0)::numeric) AND (weight_percent <= (1)::numeric)))
+);
+
+
+ALTER TABLE public.etf_bond_maturity OWNER TO postgres;
+
+--
+-- TOC entry 5355 (class 0 OID 0)
+-- Dependencies: 233
+-- Name: TABLE etf_bond_maturity; Type: COMMENT; Schema: public; Owner: postgres
+--
+
+COMMENT ON TABLE public.etf_bond_maturity IS 'Bond maturity/duration distribution for bond ETFs';
+
+
+--
+-- TOC entry 5356 (class 0 OID 0)
+-- Dependencies: 233
+-- Name: COLUMN etf_bond_maturity.maturity_range; Type: COMMENT; Schema: public; Owner: postgres
+--
+
+COMMENT ON COLUMN public.etf_bond_maturity.maturity_range IS 'Maturity range category (0-1Y, 1-3Y, 3-5Y, 5-10Y, 10-20Y, 20+Y)';
+
+
+--
+-- TOC entry 5357 (class 0 OID 0)
+-- Dependencies: 233
+-- Name: COLUMN etf_bond_maturity.weight_percent; Type: COMMENT; Schema: public; Owner: postgres
+--
+
+COMMENT ON COLUMN public.etf_bond_maturity.weight_percent IS 'Percentage of bonds with this maturity (0-1)';
+
+
+--
+-- TOC entry 5358 (class 0 OID 0)
+-- Dependencies: 233
+-- Name: COLUMN etf_bond_maturity.avg_duration_years; Type: COMMENT; Schema: public; Owner: postgres
+--
+
+COMMENT ON COLUMN public.etf_bond_maturity.avg_duration_years IS 'Average duration in years for bonds in this maturity range';
+
+
+--
+-- TOC entry 232 (class 1259 OID 102275)
+-- Name: etf_bond_ratings; Type: TABLE; Schema: public; Owner: postgres
+--
+
+CREATE TABLE public.etf_bond_ratings (
+    bond_rating_id uuid DEFAULT public.uuid_generate_v4() NOT NULL,
+    asset_id uuid NOT NULL,
+    rating_category character varying(50) NOT NULL,
+    weight_percent numeric(5,4) NOT NULL,
+    updated_at timestamp with time zone DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT etf_bond_ratings_weight_percent_check CHECK (((weight_percent >= (0)::numeric) AND (weight_percent <= (1)::numeric)))
+);
+
+
+ALTER TABLE public.etf_bond_ratings OWNER TO postgres;
+
+--
+-- TOC entry 5359 (class 0 OID 0)
+-- Dependencies: 232
+-- Name: TABLE etf_bond_ratings; Type: COMMENT; Schema: public; Owner: postgres
+--
+
+COMMENT ON TABLE public.etf_bond_ratings IS 'Bond quality ratings distribution for bond ETFs (AAA, AA, A, BBB, etc.)';
+
+
+--
+-- TOC entry 5360 (class 0 OID 0)
+-- Dependencies: 232
+-- Name: COLUMN etf_bond_ratings.rating_category; Type: COMMENT; Schema: public; Owner: postgres
+--
+
+COMMENT ON COLUMN public.etf_bond_ratings.rating_category IS 'Bond rating category (AAA, AA, A, BBB, BB, B, Below B, Not Rated)';
+
+
+--
+-- TOC entry 5361 (class 0 OID 0)
+-- Dependencies: 232
+-- Name: COLUMN etf_bond_ratings.weight_percent; Type: COMMENT; Schema: public; Owner: postgres
+--
+
+COMMENT ON COLUMN public.etf_bond_ratings.weight_percent IS 'Percentage of bonds with this rating (0-1)';
+
+
+--
+-- TOC entry 230 (class 1259 OID 102240)
+-- Name: etf_geographic_weights; Type: TABLE; Schema: public; Owner: postgres
+--
+
+CREATE TABLE public.etf_geographic_weights (
+    geographic_weight_id uuid DEFAULT public.uuid_generate_v4() NOT NULL,
+    asset_id uuid NOT NULL,
+    region_name character varying(100) NOT NULL,
+    weight_percent numeric(5,4) NOT NULL,
+    updated_at timestamp with time zone DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT etf_geographic_weights_weight_percent_check CHECK (((weight_percent >= (0)::numeric) AND (weight_percent <= (1)::numeric)))
+);
+
+
+ALTER TABLE public.etf_geographic_weights OWNER TO postgres;
+
+--
+-- TOC entry 5362 (class 0 OID 0)
+-- Dependencies: 230
+-- Name: TABLE etf_geographic_weights; Type: COMMENT; Schema: public; Owner: postgres
+--
+
+COMMENT ON TABLE public.etf_geographic_weights IS 'Geographic allocation breakdown for ETF assets (US, Europe, Asia, etc.)';
+
+
+--
+-- TOC entry 5363 (class 0 OID 0)
+-- Dependencies: 230
+-- Name: COLUMN etf_geographic_weights.weight_percent; Type: COMMENT; Schema: public; Owner: postgres
+--
+
+COMMENT ON COLUMN public.etf_geographic_weights.weight_percent IS 'Percentage weight of region in ETF (0-1, e.g., 0.65 = 65%)';
+
+
+--
+-- TOC entry 228 (class 1259 OID 102208)
+-- Name: etf_holdings; Type: TABLE; Schema: public; Owner: postgres
+--
+
+CREATE TABLE public.etf_holdings (
+    holding_id uuid DEFAULT public.uuid_generate_v4() NOT NULL,
+    asset_id uuid NOT NULL,
+    holding_symbol character varying(20),
+    holding_name character varying(255) NOT NULL,
+    holding_percent numeric(5,4) NOT NULL,
+    rank_position integer,
+    updated_at timestamp with time zone DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT etf_holdings_holding_percent_check CHECK (((holding_percent >= (0)::numeric) AND (holding_percent <= (1)::numeric)))
+);
+
+
+ALTER TABLE public.etf_holdings OWNER TO postgres;
+
+--
+-- TOC entry 5364 (class 0 OID 0)
+-- Dependencies: 228
+-- Name: TABLE etf_holdings; Type: COMMENT; Schema: public; Owner: postgres
+--
+
+COMMENT ON TABLE public.etf_holdings IS 'Top holdings (companies) within ETF assets with their weight percentages';
+
+
+--
+-- TOC entry 5365 (class 0 OID 0)
+-- Dependencies: 228
+-- Name: COLUMN etf_holdings.holding_percent; Type: COMMENT; Schema: public; Owner: postgres
+--
+
+COMMENT ON COLUMN public.etf_holdings.holding_percent IS 'Percentage weight of holding in ETF (0-1, e.g., 0.045 = 4.5%)';
+
+
+--
+-- TOC entry 5366 (class 0 OID 0)
+-- Dependencies: 228
+-- Name: COLUMN etf_holdings.rank_position; Type: COMMENT; Schema: public; Owner: postgres
+--
+
+COMMENT ON COLUMN public.etf_holdings.rank_position IS 'Ranking position of holding (1 = largest holding)';
+
+
+--
+-- TOC entry 229 (class 1259 OID 102223)
+-- Name: etf_sector_weights; Type: TABLE; Schema: public; Owner: postgres
+--
+
+CREATE TABLE public.etf_sector_weights (
+    sector_weight_id uuid DEFAULT public.uuid_generate_v4() NOT NULL,
+    asset_id uuid NOT NULL,
+    sector_name character varying(100) NOT NULL,
+    weight_percent numeric(5,4) NOT NULL,
+    updated_at timestamp with time zone DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT etf_sector_weights_weight_percent_check CHECK (((weight_percent >= (0)::numeric) AND (weight_percent <= (1)::numeric)))
+);
+
+
+ALTER TABLE public.etf_sector_weights OWNER TO postgres;
+
+--
+-- TOC entry 5367 (class 0 OID 0)
+-- Dependencies: 229
+-- Name: TABLE etf_sector_weights; Type: COMMENT; Schema: public; Owner: postgres
+--
+
+COMMENT ON TABLE public.etf_sector_weights IS 'Sector allocation breakdown for ETF assets (Technology, Healthcare, etc.)';
+
+
+--
+-- TOC entry 5368 (class 0 OID 0)
+-- Dependencies: 229
+-- Name: COLUMN etf_sector_weights.weight_percent; Type: COMMENT; Schema: public; Owner: postgres
+--
+
+COMMENT ON COLUMN public.etf_sector_weights.weight_percent IS 'Percentage weight of sector in ETF (0-1, e.g., 0.245 = 24.5%)';
 
 
 --
@@ -304,7 +573,7 @@ CREATE TABLE public.portfolio_snapshots (
 ALTER TABLE public.portfolio_snapshots OWNER TO postgres;
 
 --
--- TOC entry 5266 (class 0 OID 0)
+-- TOC entry 5369 (class 0 OID 0)
 -- Dependencies: 221
 -- Name: TABLE portfolio_snapshots; Type: COMMENT; Schema: public; Owner: postgres
 --
@@ -333,7 +602,7 @@ CREATE TABLE public.portfolios (
 ALTER TABLE public.portfolios OWNER TO postgres;
 
 --
--- TOC entry 5267 (class 0 OID 0)
+-- TOC entry 5370 (class 0 OID 0)
 -- Dependencies: 217
 -- Name: TABLE portfolios; Type: COMMENT; Schema: public; Owner: postgres
 --
@@ -365,7 +634,7 @@ CREATE TABLE public.positions (
 ALTER TABLE public.positions OWNER TO postgres;
 
 --
--- TOC entry 5268 (class 0 OID 0)
+-- TOC entry 5371 (class 0 OID 0)
 -- Dependencies: 220
 -- Name: TABLE positions; Type: COMMENT; Schema: public; Owner: postgres
 --
@@ -395,7 +664,7 @@ CREATE TABLE public.price_history (
 ALTER TABLE public.price_history OWNER TO postgres;
 
 --
--- TOC entry 5269 (class 0 OID 0)
+-- TOC entry 5372 (class 0 OID 0)
 -- Dependencies: 224
 -- Name: TABLE price_history; Type: COMMENT; Schema: public; Owner: postgres
 --
@@ -432,7 +701,7 @@ CREATE TABLE public.target_allocations (
 ALTER TABLE public.target_allocations OWNER TO postgres;
 
 --
--- TOC entry 5270 (class 0 OID 0)
+-- TOC entry 5373 (class 0 OID 0)
 -- Dependencies: 223
 -- Name: TABLE target_allocations; Type: COMMENT; Schema: public; Owner: postgres
 --
@@ -472,7 +741,7 @@ CREATE TABLE public.transactions (
 ALTER TABLE public.transactions OWNER TO postgres;
 
 --
--- TOC entry 5271 (class 0 OID 0)
+-- TOC entry 5374 (class 0 OID 0)
 -- Dependencies: 219
 -- Name: TABLE transactions; Type: COMMENT; Schema: public; Owner: postgres
 --
@@ -565,12 +834,59 @@ CREATE VIEW public.v_current_positions AS
 ALTER VIEW public.v_current_positions OWNER TO postgres;
 
 --
--- TOC entry 5272 (class 0 OID 0)
+-- TOC entry 5375 (class 0 OID 0)
 -- Dependencies: 227
 -- Name: VIEW v_current_positions; Type: COMMENT; Schema: public; Owner: postgres
 --
 
 COMMENT ON VIEW public.v_current_positions IS 'Vista posizioni correnti con percentuali di possesso e investita';
+
+
+--
+-- TOC entry 234 (class 1259 OID 102305)
+-- Name: v_etf_composition_summary; Type: VIEW; Schema: public; Owner: postgres
+--
+
+CREATE VIEW public.v_etf_composition_summary AS
+ SELECT asset_id,
+    isin,
+    ticker,
+    name,
+    asset_type,
+    ( SELECT count(*) AS count
+           FROM public.etf_holdings eh
+          WHERE (eh.asset_id = a.asset_id)) AS holdings_count,
+    ( SELECT count(*) AS count
+           FROM public.etf_sector_weights esw
+          WHERE (esw.asset_id = a.asset_id)) AS sectors_count,
+    ( SELECT count(*) AS count
+           FROM public.etf_geographic_weights egw
+          WHERE (egw.asset_id = a.asset_id)) AS regions_count,
+    ( SELECT count(*) AS count
+           FROM public.etf_asset_allocation eaa
+          WHERE (eaa.asset_id = a.asset_id)) AS asset_classes_count,
+    ( SELECT max(eh.updated_at) AS max
+           FROM public.etf_holdings eh
+          WHERE (eh.asset_id = a.asset_id)) AS last_updated,
+        CASE
+            WHEN (EXISTS ( SELECT 1
+               FROM public.etf_holdings eh
+              WHERE (eh.asset_id = a.asset_id))) THEN true
+            ELSE false
+        END AS has_composition_data
+   FROM public.assets a
+  WHERE (is_active = true);
+
+
+ALTER VIEW public.v_etf_composition_summary OWNER TO postgres;
+
+--
+-- TOC entry 5376 (class 0 OID 0)
+-- Dependencies: 234
+-- Name: VIEW v_etf_composition_summary; Type: COMMENT; Schema: public; Owner: postgres
+--
+
+COMMENT ON VIEW public.v_etf_composition_summary IS 'Summary of available ETF composition data for each asset';
 
 
 --
@@ -607,7 +923,7 @@ CREATE VIEW public.v_portfolio_performance AS
 ALTER VIEW public.v_portfolio_performance OWNER TO postgres;
 
 --
--- TOC entry 5062 (class 2606 OID 100026)
+-- TOC entry 5109 (class 2606 OID 100026)
 -- Name: assets assets_isin_key; Type: CONSTRAINT; Schema: public; Owner: postgres
 --
 
@@ -616,7 +932,7 @@ ALTER TABLE ONLY public.assets
 
 
 --
--- TOC entry 5064 (class 2606 OID 100024)
+-- TOC entry 5111 (class 2606 OID 100024)
 -- Name: assets assets_pkey; Type: CONSTRAINT; Schema: public; Owner: postgres
 --
 
@@ -625,7 +941,7 @@ ALTER TABLE ONLY public.assets
 
 
 --
--- TOC entry 5083 (class 2606 OID 100099)
+-- TOC entry 5131 (class 2606 OID 100099)
 -- Name: dividends dividends_pkey; Type: CONSTRAINT; Schema: public; Owner: postgres
 --
 
@@ -634,7 +950,88 @@ ALTER TABLE ONLY public.dividends
 
 
 --
--- TOC entry 5079 (class 2606 OID 100083)
+-- TOC entry 5161 (class 2606 OID 102265)
+-- Name: etf_asset_allocation etf_asset_allocation_pkey; Type: CONSTRAINT; Schema: public; Owner: postgres
+--
+
+ALTER TABLE ONLY public.etf_asset_allocation
+    ADD CONSTRAINT etf_asset_allocation_pkey PRIMARY KEY (asset_allocation_id);
+
+
+--
+-- TOC entry 5163 (class 2606 OID 102267)
+-- Name: etf_asset_allocation etf_asset_allocation_unique; Type: CONSTRAINT; Schema: public; Owner: postgres
+--
+
+ALTER TABLE ONLY public.etf_asset_allocation
+    ADD CONSTRAINT etf_asset_allocation_unique UNIQUE (asset_id, allocation_type);
+
+
+--
+-- TOC entry 5171 (class 2606 OID 102297)
+-- Name: etf_bond_maturity etf_bond_maturity_pkey; Type: CONSTRAINT; Schema: public; Owner: postgres
+--
+
+ALTER TABLE ONLY public.etf_bond_maturity
+    ADD CONSTRAINT etf_bond_maturity_pkey PRIMARY KEY (bond_maturity_id);
+
+
+--
+-- TOC entry 5167 (class 2606 OID 102282)
+-- Name: etf_bond_ratings etf_bond_ratings_pkey; Type: CONSTRAINT; Schema: public; Owner: postgres
+--
+
+ALTER TABLE ONLY public.etf_bond_ratings
+    ADD CONSTRAINT etf_bond_ratings_pkey PRIMARY KEY (bond_rating_id);
+
+
+--
+-- TOC entry 5155 (class 2606 OID 102247)
+-- Name: etf_geographic_weights etf_geographic_weights_pkey; Type: CONSTRAINT; Schema: public; Owner: postgres
+--
+
+ALTER TABLE ONLY public.etf_geographic_weights
+    ADD CONSTRAINT etf_geographic_weights_pkey PRIMARY KEY (geographic_weight_id);
+
+
+--
+-- TOC entry 5157 (class 2606 OID 102249)
+-- Name: etf_geographic_weights etf_geographic_weights_unique; Type: CONSTRAINT; Schema: public; Owner: postgres
+--
+
+ALTER TABLE ONLY public.etf_geographic_weights
+    ADD CONSTRAINT etf_geographic_weights_unique UNIQUE (asset_id, region_name);
+
+
+--
+-- TOC entry 5145 (class 2606 OID 102215)
+-- Name: etf_holdings etf_holdings_pkey; Type: CONSTRAINT; Schema: public; Owner: postgres
+--
+
+ALTER TABLE ONLY public.etf_holdings
+    ADD CONSTRAINT etf_holdings_pkey PRIMARY KEY (holding_id);
+
+
+--
+-- TOC entry 5149 (class 2606 OID 102230)
+-- Name: etf_sector_weights etf_sector_weights_pkey; Type: CONSTRAINT; Schema: public; Owner: postgres
+--
+
+ALTER TABLE ONLY public.etf_sector_weights
+    ADD CONSTRAINT etf_sector_weights_pkey PRIMARY KEY (sector_weight_id);
+
+
+--
+-- TOC entry 5151 (class 2606 OID 102232)
+-- Name: etf_sector_weights etf_sector_weights_unique; Type: CONSTRAINT; Schema: public; Owner: postgres
+--
+
+ALTER TABLE ONLY public.etf_sector_weights
+    ADD CONSTRAINT etf_sector_weights_unique UNIQUE (asset_id, sector_name);
+
+
+--
+-- TOC entry 5127 (class 2606 OID 100083)
 -- Name: portfolio_snapshots portfolio_snapshots_pkey; Type: CONSTRAINT; Schema: public; Owner: postgres
 --
 
@@ -643,7 +1040,7 @@ ALTER TABLE ONLY public.portfolio_snapshots
 
 
 --
--- TOC entry 5081 (class 2606 OID 100085)
+-- TOC entry 5129 (class 2606 OID 100085)
 -- Name: portfolio_snapshots portfolio_snapshots_portfolio_id_snapshot_date_key; Type: CONSTRAINT; Schema: public; Owner: postgres
 --
 
@@ -652,7 +1049,7 @@ ALTER TABLE ONLY public.portfolio_snapshots
 
 
 --
--- TOC entry 5060 (class 2606 OID 100008)
+-- TOC entry 5107 (class 2606 OID 100008)
 -- Name: portfolios portfolios_pkey; Type: CONSTRAINT; Schema: public; Owner: postgres
 --
 
@@ -661,7 +1058,7 @@ ALTER TABLE ONLY public.portfolios
 
 
 --
--- TOC entry 5072 (class 2606 OID 100062)
+-- TOC entry 5120 (class 2606 OID 100062)
 -- Name: positions positions_pkey; Type: CONSTRAINT; Schema: public; Owner: postgres
 --
 
@@ -670,7 +1067,7 @@ ALTER TABLE ONLY public.positions
 
 
 --
--- TOC entry 5074 (class 2606 OID 100064)
+-- TOC entry 5122 (class 2606 OID 100064)
 -- Name: positions positions_portfolio_id_asset_id_key; Type: CONSTRAINT; Schema: public; Owner: postgres
 --
 
@@ -679,7 +1076,7 @@ ALTER TABLE ONLY public.positions
 
 
 --
--- TOC entry 5093 (class 2606 OID 100166)
+-- TOC entry 5141 (class 2606 OID 100166)
 -- Name: price_history price_history_asset_id_price_date_key; Type: CONSTRAINT; Schema: public; Owner: postgres
 --
 
@@ -688,7 +1085,7 @@ ALTER TABLE ONLY public.price_history
 
 
 --
--- TOC entry 5095 (class 2606 OID 100164)
+-- TOC entry 5143 (class 2606 OID 100164)
 -- Name: price_history price_history_pkey; Type: CONSTRAINT; Schema: public; Owner: postgres
 --
 
@@ -697,7 +1094,7 @@ ALTER TABLE ONLY public.price_history
 
 
 --
--- TOC entry 5088 (class 2606 OID 100124)
+-- TOC entry 5136 (class 2606 OID 100124)
 -- Name: target_allocations target_allocations_pkey; Type: CONSTRAINT; Schema: public; Owner: postgres
 --
 
@@ -706,7 +1103,7 @@ ALTER TABLE ONLY public.target_allocations
 
 
 --
--- TOC entry 5070 (class 2606 OID 100042)
+-- TOC entry 5118 (class 2606 OID 100042)
 -- Name: transactions transactions_pkey; Type: CONSTRAINT; Schema: public; Owner: postgres
 --
 
@@ -715,7 +1112,7 @@ ALTER TABLE ONLY public.transactions
 
 
 --
--- TOC entry 5065 (class 1259 OID 100151)
+-- TOC entry 5112 (class 1259 OID 100151)
 -- Name: idx_assets_active; Type: INDEX; Schema: public; Owner: postgres
 --
 
@@ -723,7 +1120,15 @@ CREATE INDEX idx_assets_active ON public.assets USING btree (is_active);
 
 
 --
--- TOC entry 5066 (class 1259 OID 100149)
+-- TOC entry 5113 (class 1259 OID 102310)
+-- Name: idx_assets_composition_last_updated; Type: INDEX; Schema: public; Owner: postgres
+--
+
+CREATE INDEX idx_assets_composition_last_updated ON public.assets USING btree (composition_last_updated DESC);
+
+
+--
+-- TOC entry 5114 (class 1259 OID 100149)
 -- Name: idx_assets_isin; Type: INDEX; Schema: public; Owner: postgres
 --
 
@@ -731,7 +1136,7 @@ CREATE INDEX idx_assets_isin ON public.assets USING btree (isin);
 
 
 --
--- TOC entry 5067 (class 1259 OID 100142)
+-- TOC entry 5115 (class 1259 OID 100142)
 -- Name: idx_assets_name_search; Type: INDEX; Schema: public; Owner: postgres
 --
 
@@ -739,7 +1144,7 @@ CREATE INDEX idx_assets_name_search ON public.assets USING gin (to_tsvector('ita
 
 
 --
--- TOC entry 5068 (class 1259 OID 100150)
+-- TOC entry 5116 (class 1259 OID 100150)
 -- Name: idx_assets_type; Type: INDEX; Schema: public; Owner: postgres
 --
 
@@ -747,7 +1152,7 @@ CREATE INDEX idx_assets_type ON public.assets USING btree (asset_type);
 
 
 --
--- TOC entry 5084 (class 1259 OID 100147)
+-- TOC entry 5132 (class 1259 OID 100147)
 -- Name: idx_dividends_asset; Type: INDEX; Schema: public; Owner: postgres
 --
 
@@ -755,7 +1160,7 @@ CREATE INDEX idx_dividends_asset ON public.dividends USING btree (asset_id);
 
 
 --
--- TOC entry 5085 (class 1259 OID 100148)
+-- TOC entry 5133 (class 1259 OID 100148)
 -- Name: idx_dividends_date; Type: INDEX; Schema: public; Owner: postgres
 --
 
@@ -763,7 +1168,7 @@ CREATE INDEX idx_dividends_date ON public.dividends USING btree (payment_date DE
 
 
 --
--- TOC entry 5086 (class 1259 OID 100146)
+-- TOC entry 5134 (class 1259 OID 100146)
 -- Name: idx_dividends_portfolio; Type: INDEX; Schema: public; Owner: postgres
 --
 
@@ -771,7 +1176,103 @@ CREATE INDEX idx_dividends_portfolio ON public.dividends USING btree (portfolio_
 
 
 --
--- TOC entry 5089 (class 1259 OID 100172)
+-- TOC entry 5164 (class 1259 OID 102273)
+-- Name: idx_etf_asset_allocation_asset_id; Type: INDEX; Schema: public; Owner: postgres
+--
+
+CREATE INDEX idx_etf_asset_allocation_asset_id ON public.etf_asset_allocation USING btree (asset_id);
+
+
+--
+-- TOC entry 5165 (class 1259 OID 102274)
+-- Name: idx_etf_asset_allocation_updated_at; Type: INDEX; Schema: public; Owner: postgres
+--
+
+CREATE INDEX idx_etf_asset_allocation_updated_at ON public.etf_asset_allocation USING btree (updated_at);
+
+
+--
+-- TOC entry 5172 (class 1259 OID 102303)
+-- Name: idx_etf_bond_maturity_asset_id; Type: INDEX; Schema: public; Owner: postgres
+--
+
+CREATE INDEX idx_etf_bond_maturity_asset_id ON public.etf_bond_maturity USING btree (asset_id);
+
+
+--
+-- TOC entry 5173 (class 1259 OID 102304)
+-- Name: idx_etf_bond_maturity_updated_at; Type: INDEX; Schema: public; Owner: postgres
+--
+
+CREATE INDEX idx_etf_bond_maturity_updated_at ON public.etf_bond_maturity USING btree (updated_at);
+
+
+--
+-- TOC entry 5168 (class 1259 OID 102288)
+-- Name: idx_etf_bond_ratings_asset_id; Type: INDEX; Schema: public; Owner: postgres
+--
+
+CREATE INDEX idx_etf_bond_ratings_asset_id ON public.etf_bond_ratings USING btree (asset_id);
+
+
+--
+-- TOC entry 5169 (class 1259 OID 102289)
+-- Name: idx_etf_bond_ratings_updated_at; Type: INDEX; Schema: public; Owner: postgres
+--
+
+CREATE INDEX idx_etf_bond_ratings_updated_at ON public.etf_bond_ratings USING btree (updated_at);
+
+
+--
+-- TOC entry 5158 (class 1259 OID 102255)
+-- Name: idx_etf_geographic_weights_asset_id; Type: INDEX; Schema: public; Owner: postgres
+--
+
+CREATE INDEX idx_etf_geographic_weights_asset_id ON public.etf_geographic_weights USING btree (asset_id);
+
+
+--
+-- TOC entry 5159 (class 1259 OID 102256)
+-- Name: idx_etf_geographic_weights_updated_at; Type: INDEX; Schema: public; Owner: postgres
+--
+
+CREATE INDEX idx_etf_geographic_weights_updated_at ON public.etf_geographic_weights USING btree (updated_at);
+
+
+--
+-- TOC entry 5146 (class 1259 OID 102221)
+-- Name: idx_etf_holdings_asset_id; Type: INDEX; Schema: public; Owner: postgres
+--
+
+CREATE INDEX idx_etf_holdings_asset_id ON public.etf_holdings USING btree (asset_id);
+
+
+--
+-- TOC entry 5147 (class 1259 OID 102222)
+-- Name: idx_etf_holdings_updated_at; Type: INDEX; Schema: public; Owner: postgres
+--
+
+CREATE INDEX idx_etf_holdings_updated_at ON public.etf_holdings USING btree (updated_at);
+
+
+--
+-- TOC entry 5152 (class 1259 OID 102238)
+-- Name: idx_etf_sector_weights_asset_id; Type: INDEX; Schema: public; Owner: postgres
+--
+
+CREATE INDEX idx_etf_sector_weights_asset_id ON public.etf_sector_weights USING btree (asset_id);
+
+
+--
+-- TOC entry 5153 (class 1259 OID 102239)
+-- Name: idx_etf_sector_weights_updated_at; Type: INDEX; Schema: public; Owner: postgres
+--
+
+CREATE INDEX idx_etf_sector_weights_updated_at ON public.etf_sector_weights USING btree (updated_at);
+
+
+--
+-- TOC entry 5137 (class 1259 OID 100172)
 -- Name: idx_price_history_asset; Type: INDEX; Schema: public; Owner: postgres
 --
 
@@ -779,7 +1280,7 @@ CREATE INDEX idx_price_history_asset ON public.price_history USING btree (asset_
 
 
 --
--- TOC entry 5090 (class 1259 OID 100174)
+-- TOC entry 5138 (class 1259 OID 100174)
 -- Name: idx_price_history_asset_date; Type: INDEX; Schema: public; Owner: postgres
 --
 
@@ -787,7 +1288,7 @@ CREATE INDEX idx_price_history_asset_date ON public.price_history USING btree (a
 
 
 --
--- TOC entry 5091 (class 1259 OID 100173)
+-- TOC entry 5139 (class 1259 OID 100173)
 -- Name: idx_price_history_date; Type: INDEX; Schema: public; Owner: postgres
 --
 
@@ -795,7 +1296,7 @@ CREATE INDEX idx_price_history_date ON public.price_history USING btree (price_d
 
 
 --
--- TOC entry 5075 (class 1259 OID 100144)
+-- TOC entry 5123 (class 1259 OID 100144)
 -- Name: idx_snapshots_date; Type: INDEX; Schema: public; Owner: postgres
 --
 
@@ -803,7 +1304,7 @@ CREATE INDEX idx_snapshots_date ON public.portfolio_snapshots USING btree (snaps
 
 
 --
--- TOC entry 5076 (class 1259 OID 100143)
+-- TOC entry 5124 (class 1259 OID 100143)
 -- Name: idx_snapshots_portfolio; Type: INDEX; Schema: public; Owner: postgres
 --
 
@@ -811,7 +1312,7 @@ CREATE INDEX idx_snapshots_portfolio ON public.portfolio_snapshots USING btree (
 
 
 --
--- TOC entry 5077 (class 1259 OID 100145)
+-- TOC entry 5125 (class 1259 OID 100145)
 -- Name: idx_snapshots_portfolio_date; Type: INDEX; Schema: public; Owner: postgres
 --
 
@@ -819,7 +1320,7 @@ CREATE INDEX idx_snapshots_portfolio_date ON public.portfolio_snapshots USING bt
 
 
 --
--- TOC entry 5106 (class 2620 OID 100154)
+-- TOC entry 5190 (class 2620 OID 100154)
 -- Name: assets update_assets_updated_at; Type: TRIGGER; Schema: public; Owner: postgres
 --
 
@@ -827,7 +1328,7 @@ CREATE TRIGGER update_assets_updated_at BEFORE UPDATE ON public.assets FOR EACH 
 
 
 --
--- TOC entry 5105 (class 2620 OID 100153)
+-- TOC entry 5189 (class 2620 OID 100153)
 -- Name: portfolios update_portfolios_updated_at; Type: TRIGGER; Schema: public; Owner: postgres
 --
 
@@ -835,7 +1336,7 @@ CREATE TRIGGER update_portfolios_updated_at BEFORE UPDATE ON public.portfolios F
 
 
 --
--- TOC entry 5107 (class 2620 OID 100191)
+-- TOC entry 5191 (class 2620 OID 100191)
 -- Name: transactions update_position_on_transaction; Type: TRIGGER; Schema: public; Owner: postgres
 --
 
@@ -843,7 +1344,7 @@ CREATE TRIGGER update_position_on_transaction AFTER INSERT ON public.transaction
 
 
 --
--- TOC entry 5109 (class 2620 OID 100156)
+-- TOC entry 5193 (class 2620 OID 100156)
 -- Name: positions update_positions_updated_at; Type: TRIGGER; Schema: public; Owner: postgres
 --
 
@@ -851,7 +1352,7 @@ CREATE TRIGGER update_positions_updated_at BEFORE UPDATE ON public.positions FOR
 
 
 --
--- TOC entry 5110 (class 2620 OID 100157)
+-- TOC entry 5194 (class 2620 OID 100157)
 -- Name: target_allocations update_target_allocations_updated_at; Type: TRIGGER; Schema: public; Owner: postgres
 --
 
@@ -859,7 +1360,7 @@ CREATE TRIGGER update_target_allocations_updated_at BEFORE UPDATE ON public.targ
 
 
 --
--- TOC entry 5108 (class 2620 OID 100155)
+-- TOC entry 5192 (class 2620 OID 100155)
 -- Name: transactions update_transactions_updated_at; Type: TRIGGER; Schema: public; Owner: postgres
 --
 
@@ -867,7 +1368,7 @@ CREATE TRIGGER update_transactions_updated_at BEFORE UPDATE ON public.transactio
 
 
 --
--- TOC entry 5101 (class 2606 OID 100105)
+-- TOC entry 5179 (class 2606 OID 100105)
 -- Name: dividends dividends_asset_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
 --
 
@@ -876,7 +1377,7 @@ ALTER TABLE ONLY public.dividends
 
 
 --
--- TOC entry 5102 (class 2606 OID 100100)
+-- TOC entry 5180 (class 2606 OID 100100)
 -- Name: dividends dividends_portfolio_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
 --
 
@@ -885,7 +1386,61 @@ ALTER TABLE ONLY public.dividends
 
 
 --
--- TOC entry 5100 (class 2606 OID 100086)
+-- TOC entry 5186 (class 2606 OID 102268)
+-- Name: etf_asset_allocation etf_asset_allocation_asset_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+--
+
+ALTER TABLE ONLY public.etf_asset_allocation
+    ADD CONSTRAINT etf_asset_allocation_asset_fkey FOREIGN KEY (asset_id) REFERENCES public.assets(asset_id) ON DELETE CASCADE;
+
+
+--
+-- TOC entry 5188 (class 2606 OID 102298)
+-- Name: etf_bond_maturity etf_bond_maturity_asset_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+--
+
+ALTER TABLE ONLY public.etf_bond_maturity
+    ADD CONSTRAINT etf_bond_maturity_asset_fkey FOREIGN KEY (asset_id) REFERENCES public.assets(asset_id) ON DELETE CASCADE;
+
+
+--
+-- TOC entry 5187 (class 2606 OID 102283)
+-- Name: etf_bond_ratings etf_bond_ratings_asset_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+--
+
+ALTER TABLE ONLY public.etf_bond_ratings
+    ADD CONSTRAINT etf_bond_ratings_asset_fkey FOREIGN KEY (asset_id) REFERENCES public.assets(asset_id) ON DELETE CASCADE;
+
+
+--
+-- TOC entry 5185 (class 2606 OID 102250)
+-- Name: etf_geographic_weights etf_geographic_weights_asset_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+--
+
+ALTER TABLE ONLY public.etf_geographic_weights
+    ADD CONSTRAINT etf_geographic_weights_asset_fkey FOREIGN KEY (asset_id) REFERENCES public.assets(asset_id) ON DELETE CASCADE;
+
+
+--
+-- TOC entry 5183 (class 2606 OID 102216)
+-- Name: etf_holdings etf_holdings_asset_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+--
+
+ALTER TABLE ONLY public.etf_holdings
+    ADD CONSTRAINT etf_holdings_asset_fkey FOREIGN KEY (asset_id) REFERENCES public.assets(asset_id) ON DELETE CASCADE;
+
+
+--
+-- TOC entry 5184 (class 2606 OID 102233)
+-- Name: etf_sector_weights etf_sector_weights_asset_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+--
+
+ALTER TABLE ONLY public.etf_sector_weights
+    ADD CONSTRAINT etf_sector_weights_asset_fkey FOREIGN KEY (asset_id) REFERENCES public.assets(asset_id) ON DELETE CASCADE;
+
+
+--
+-- TOC entry 5178 (class 2606 OID 100086)
 -- Name: portfolio_snapshots portfolio_snapshots_portfolio_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
 --
 
@@ -894,7 +1449,7 @@ ALTER TABLE ONLY public.portfolio_snapshots
 
 
 --
--- TOC entry 5098 (class 2606 OID 100070)
+-- TOC entry 5176 (class 2606 OID 100070)
 -- Name: positions positions_asset_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
 --
 
@@ -903,7 +1458,7 @@ ALTER TABLE ONLY public.positions
 
 
 --
--- TOC entry 5099 (class 2606 OID 100065)
+-- TOC entry 5177 (class 2606 OID 100065)
 -- Name: positions positions_portfolio_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
 --
 
@@ -912,7 +1467,7 @@ ALTER TABLE ONLY public.positions
 
 
 --
--- TOC entry 5104 (class 2606 OID 100167)
+-- TOC entry 5182 (class 2606 OID 100167)
 -- Name: price_history price_history_asset_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
 --
 
@@ -921,7 +1476,7 @@ ALTER TABLE ONLY public.price_history
 
 
 --
--- TOC entry 5103 (class 2606 OID 100125)
+-- TOC entry 5181 (class 2606 OID 100125)
 -- Name: target_allocations target_allocations_portfolio_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
 --
 
@@ -930,7 +1485,7 @@ ALTER TABLE ONLY public.target_allocations
 
 
 --
--- TOC entry 5096 (class 2606 OID 100048)
+-- TOC entry 5174 (class 2606 OID 100048)
 -- Name: transactions transactions_asset_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
 --
 
@@ -939,7 +1494,7 @@ ALTER TABLE ONLY public.transactions
 
 
 --
--- TOC entry 5097 (class 2606 OID 100043)
+-- TOC entry 5175 (class 2606 OID 100043)
 -- Name: transactions transactions_portfolio_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
 --
 
@@ -947,7 +1502,7 @@ ALTER TABLE ONLY public.transactions
     ADD CONSTRAINT transactions_portfolio_id_fkey FOREIGN KEY (portfolio_id) REFERENCES public.portfolios(portfolio_id) ON DELETE CASCADE;
 
 
--- Completed on 2025-11-07 09:54:00
+-- Completed on 2025-11-10 19:43:56
 
 --
 -- PostgreSQL database dump complete

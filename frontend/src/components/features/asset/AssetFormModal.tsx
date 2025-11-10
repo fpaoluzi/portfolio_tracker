@@ -111,6 +111,8 @@ export const AssetFormModal: React.FC<AssetFormModalProps> = ({ asset, onClose, 
             <option value="Oro">Oro</option>
             <option value="Crypto">Crypto</option>
             <option value="ETF">ETF</option>
+            <option value="Azione Singola">Azione Singola</option>
+            <option value="Obbligazione Singola">Obbligazione Singola</option>
           </Select>
 
           <Select

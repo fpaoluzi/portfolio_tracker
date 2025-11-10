@@ -19,7 +19,7 @@ export interface Asset {
   isin: string;
   ticker?: string;
   name: string;
-  asset_type: 'Azionario' | 'Obbligazionario' | 'Monetario' | 'Oro' | 'Crypto' | 'ETF';
+  asset_type: 'Azionario' | 'Obbligazionario' | 'Monetario' | 'Oro' | 'Crypto' | 'ETF' | 'Azione Singola' | 'Obbligazione Singola';
   asset_category?: string;
   currency: string;
   country?: string;
@@ -37,6 +37,7 @@ export interface Asset {
   standard_deviation?: number;
   isr?: number;
   factsheet_url?: string;
+  composition_last_updated?: string;
   is_active: boolean;
   created_at: string;
   updated_at: string;

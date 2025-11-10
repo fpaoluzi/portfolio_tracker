@@ -28,20 +28,24 @@ import {
   Legend,
   ResponsiveContainer,
 } from 'recharts';
-import { Button } from '@/components/ui';
+import { Button, ToastContainer } from '@/components/ui';
+import { Modal } from '@/components/ui/Modal';
 import { PortfolioFormModal } from '@/components/features/portfolio/PortfolioFormModal';
 import { AssetFormModal } from '@/components/features/asset/AssetFormModal';
 import { AssetsList } from '@/components/features/asset/AssetsList';
 import { TransactionFormModal } from '@/components/features/transaction/TransactionFormModal';
 import { ImportExcelModal } from '@/components/features/transaction/ImportExcelModal';
 import { MonthlyPerformanceChart } from '@/components/features/performance/MonthlyPerformanceChart';
-import { portfoliosApi, assetsApi, transactionsApi } from '@/lib/api';
+import { PortfolioAnalysis } from '@/components/features/analysis/PortfolioAnalysis';
+import { portfoliosApi, assetsApi, transactionsApi, getPortfolioRiskStats, RiskStats } from '@/lib/api';
 import { usePortfolio } from '@/lib/hooks/usePortfolio';
 import { formatCurrency, formatPercent, formatDate } from '@/lib/utils/format';
 import { getColorByIndex } from '@/lib/utils/colors';
+import { ToastProvider, useToastContext } from '@/lib/context/ToastContext';
 import type { Portfolio, Asset } from '@/types';
 
-export default function Home() {
+function HomeContent() {
+  const toast = useToastContext();
   const [portfolios, setPortfolios] = useState<Portfolio[]>([]);
   const [selectedPortfolio, setSelectedPortfolio] = useState<Portfolio | null>(null);
   const [assets, setAssets] = useState<Asset[]>([]);
@@ -59,6 +63,8 @@ export default function Home() {
   const [transactionSort, setTransactionSort] = useState<{ field: string; direction: 'asc' | 'desc' }>({ field: 'transaction_date', direction: 'desc' });
   const [assetFilter, setAssetFilter] = useState('');
   const [assetSort, setAssetSort] = useState<{ field: string; direction: 'asc' | 'desc' }>({ field: 'name', direction: 'asc' });
+  const [riskStats, setRiskStats] = useState<RiskStats | null>(null);
+  const [showAllocationDetail, setShowAllocationDetail] = useState<{ asset_type: string; details: any[] } | null>(null);
 
   const {
     loading,
@@ -76,6 +82,25 @@ export default function Home() {
     loadPortfolios();
     loadAssets();
   }, []);
+
+  useEffect(() => {
+    if (selectedPortfolio?.portfolio_id) {
+      loadRiskStats();
+    } else {
+      setRiskStats(null);
+    }
+  }, [selectedPortfolio?.portfolio_id]);
+
+  const loadRiskStats = async () => {
+    if (!selectedPortfolio?.portfolio_id) return;
+    try {
+      const stats = await getPortfolioRiskStats(selectedPortfolio.portfolio_id);
+      setRiskStats(stats);
+    } catch (error) {
+      console.error('Error loading risk stats:', error);
+      setRiskStats(null);
+    }
+  };
 
   const loadPortfolios = async () => {
     try {
@@ -322,23 +347,31 @@ export default function Home() {
             </div>
           </div>
 
-          {portfolios.length > 0 && (
-            <div className="mt-4 flex gap-2 overflow-x-auto pb-2">
-              {portfolios.map((p) => (
-                <button
-                  key={p.portfolio_id}
-                  onClick={() => setSelectedPortfolio(p)}
-                  className={`px-4 py-2 rounded-lg whitespace-nowrap transition-all ${
-                    selectedPortfolio?.portfolio_id === p.portfolio_id
-                      ? 'bg-blue-500 text-white'
-                      : 'bg-white/10 text-blue-200 hover:bg-white/20'
-                  }`}
-                >
-                  {p.name}
-                </button>
-              ))}
+          <div className="mt-4 flex justify-between items-start gap-4">
+            {/* Portfolio Tabs */}
+            {portfolios.length > 0 && (
+              <div className="flex gap-2 overflow-x-auto pb-2 flex-1">
+                {portfolios.map((p) => (
+                  <button
+                    key={p.portfolio_id}
+                    onClick={() => setSelectedPortfolio(p)}
+                    className={`px-4 py-2 rounded-lg whitespace-nowrap transition-all ${
+                      selectedPortfolio?.portfolio_id === p.portfolio_id
+                        ? 'bg-blue-500 text-white'
+                        : 'bg-white/10 text-blue-200 hover:bg-white/20'
+                    }`}
+                  >
+                    {p.name}
+                  </button>
+                ))}
+              </div>
+            )}
+
+            {/* Toast Container - Posizione dedicata accanto ai portfolio */}
+            <div className="flex-shrink-0">
+              <ToastContainer toasts={toast.toasts} onDismiss={toast.dismissToast} />
             </div>
-          )}
+          </div>
         </div>
 
         {/* Stats Cards */}
@@ -434,7 +467,7 @@ export default function Home() {
 
         {/* Navigation Tabs */}
         <div className="bg-white/10 backdrop-blur-lg rounded-xl p-2 mb-6 border border-white/20 flex gap-2 overflow-x-auto">
-          {['overview', 'positions', 'transactions', 'assets', 'allocation', 'geography'].map((tab) => (
+          {['overview', 'positions', 'transactions', 'assets', 'analysis'].map((tab) => (
             <button
               key={tab}
               onClick={() => setActiveTab(tab)}
@@ -448,8 +481,7 @@ export default function Home() {
               {tab === 'positions' && 'Posizioni'}
               {tab === 'transactions' && 'Transazioni'}
               {tab === 'assets' && 'Asset'}
-              {tab === 'allocation' && 'Allocazione'}
-              {tab === 'geography' && 'Geografia'}
+              {tab === 'analysis' && 'Analisi Composizione'}
             </button>
           ))}
         </div>
@@ -499,40 +531,114 @@ export default function Home() {
               </div>
             )}
 
-            {allocation.length > 0 && (
-              <div className="bg-white/10 backdrop-blur-lg rounded-2xl p-6 border border-white/20">
-                <h2 className="text-xl font-bold text-white mb-4">
-                  Allocazione Asset
-                </h2>
-                <ResponsiveContainer width="100%" height={300}>
-                  <PieChart>
-                    <Pie
-                      data={allocation.map(a => ({
-                        ...a,
-                        total_value: parseFloat(String(a.total_value)),
-                        percentage: parseFloat(String(a.percentage))
-                      }))}
-                      dataKey="total_value"
-                      nameKey="asset_type"
-                      cx="50%"
-                      cy="50%"
-                      label={({ asset_type, percentage }: any) =>
-                        `${asset_type} ${parseFloat(percentage).toFixed(1)}%`
-                      }
-                      outerRadius={100}
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+              {allocation.length > 0 && (
+                <div className="bg-white/10 backdrop-blur-lg rounded-2xl p-6 border border-white/20">
+                  <h2 className="text-xl font-bold text-white mb-4">
+                    Allocazione Asset
+                  </h2>
+                  <ResponsiveContainer width="100%" height={300}>
+                    <PieChart>
+                      <Pie
+                        data={allocation.map(a => ({
+                          ...a,
+                          total_value: parseFloat(String(a.total_value)),
+                          percentage: parseFloat(String(a.percentage))
+                        }))}
+                        dataKey="total_value"
+                        nameKey="asset_type"
+                        cx="50%"
+                        cy="50%"
+                        label={({ asset_type, percentage }: any) =>
+                          `${asset_type} ${parseFloat(percentage).toFixed(1)}%`
+                        }
+                        outerRadius={100}
+                        onClick={(data: any) => {
+                          if (data && data.asset_type) {
+                            // Mostra dettaglio per tipo asset
+                            const assetTypeDetails = positions.filter(p => p.asset_type === data.asset_type);
+                            setShowAllocationDetail({
+                              asset_type: data.asset_type,
+                              details: assetTypeDetails,
+                            });
+                          }
+                        }}
+                        style={{ cursor: 'pointer' }}
+                      >
+                        {allocation.map((entry, index) => (
+                          <Cell
+                            key={`cell-${index}`}
+                            fill={getColorByIndex(index)}
+                          />
+                        ))}
+                      </Pie>
+                      <Tooltip formatter={(value: any) => formatCurrency(value)} />
+                    </PieChart>
+                  </ResponsiveContainer>
+                </div>
+              )}
+
+              {riskStats && (riskStats.isr !== null || riskStats.standard_deviation !== null || riskStats.sharpe_ratio !== null) && (
+                <div className="bg-white/10 backdrop-blur-lg rounded-2xl p-6 border border-white/20">
+                  <h2 className="text-xl font-bold text-white mb-4">
+                    Statistiche di Rischio
+                  </h2>
+                  <div className="space-y-4">
+                    <div 
+                      className="bg-white/5 rounded-lg p-4 border border-white/20 cursor-pointer hover:bg-white/10 transition-colors"
+                      onClick={() => {
+                        if (riskStats.details && riskStats.details.length > 0) {
+                          setShowAllocationDetail({
+                            asset_type: 'ISR - Indice Sintetico di Rischio',
+                            details: riskStats.details,
+                          });
+                        }
+                      }}
                     >
-                      {allocation.map((entry, index) => (
-                        <Cell
-                          key={`cell-${index}`}
-                          fill={getColorByIndex(index)}
-                        />
-                      ))}
-                    </Pie>
-                    <Tooltip formatter={(value: any) => formatCurrency(value)} />
-                  </PieChart>
-                </ResponsiveContainer>
-              </div>
-            )}
+                      <div className="text-sm text-gray-400 mb-1">ISR Medio</div>
+                      <div className="text-2xl font-bold text-blue-400">
+                        {riskStats.isr !== null ? riskStats.isr.toFixed(2) : 'N/A'}
+                      </div>
+                    </div>
+                    <div 
+                      className="bg-white/5 rounded-lg p-4 border border-white/20 cursor-pointer hover:bg-white/10 transition-colors"
+                      onClick={() => {
+                        if (riskStats.details && riskStats.details.length > 0) {
+                          setShowAllocationDetail({
+                            asset_type: 'Deviazione Standard',
+                            details: riskStats.details,
+                          });
+                        }
+                      }}
+                    >
+                      <div className="text-sm text-gray-400 mb-1">Deviazione Standard</div>
+                      <div className="text-2xl font-bold text-green-400">
+                        {riskStats.standard_deviation !== null ? `${riskStats.standard_deviation.toFixed(2)}%` : 'N/A'}
+                      </div>
+                    </div>
+                    <div 
+                      className="bg-white/5 rounded-lg p-4 border border-white/20 cursor-pointer hover:bg-white/10 transition-colors"
+                      onClick={() => {
+                        if (riskStats.details && riskStats.details.length > 0) {
+                          setShowAllocationDetail({
+                            asset_type: 'Sharpe Ratio',
+                            details: riskStats.details,
+                          });
+                        }
+                      }}
+                    >
+                      <div className="text-sm text-gray-400 mb-1">Sharpe Ratio</div>
+                      <div className="text-2xl font-bold text-purple-400">
+                        {riskStats.sharpe_ratio !== null ? riskStats.sharpe_ratio.toFixed(2) : 'N/A'}
+                      </div>
+                    </div>
+                  </div>
+                  <div className="text-xs text-gray-400 text-center mt-4">
+                    Clicca su un indicatore per vedere il dettaglio
+                  </div>
+                </div>
+              )}
+            </div>
 
             {/* Monthly Performance Chart */}
             {selectedPortfolio && positions.length > 0 && (
@@ -941,123 +1047,20 @@ export default function Home() {
               assets={assets}
               onEdit={handleEditAsset}
               onDelete={handleDeleteAsset}
+              onRefresh={loadAssets}
             />
           </div>
         )}
 
-        {/* Allocation Tab */}
-        {activeTab === 'allocation' && allocation.length > 0 && (
-          <div className="space-y-6">
-            <div className="bg-white/10 backdrop-blur-lg rounded-2xl p-6 border border-white/20">
-              <div className="flex justify-between items-center mb-6">
-                <h2 className="text-xl font-bold text-white">
-                  Allocazione Dettagliata
-                </h2>
-              </div>
-
-              <div className="space-y-4">
-                {allocation.map((item, idx) => {
-                  const currentPct = parseFloat(String(item.percentage));
-
-                  return (
-                    <div key={idx} className="bg-white/5 rounded-lg p-4">
-                      <div className="flex justify-between items-center mb-2">
-                        <div className="flex items-center gap-3">
-                          <span className="text-white font-medium">
-                            {item.asset_type}
-                          </span>
-                          <span className="text-blue-300 font-bold">
-                            {currentPct.toFixed(2)}%
-                          </span>
-                        </div>
-                        <span className="text-blue-200">
-                          {formatCurrency(item.total_value)}
-                        </span>
-                      </div>
-                      <div className="relative w-full bg-white/20 rounded-full h-3">
-                        <div
-                          className="h-3 rounded-full transition-all"
-                          style={{
-                            width: `${currentPct}%`,
-                            backgroundColor: getColorByIndex(idx),
-                          }}
-                        />
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
-          </div>
-        )}
-
-        {/* Geography Tab */}
-        {activeTab === 'geography' && geoAllocation.length > 0 && (
-          <div className="space-y-6">
-            <div className="bg-white/10 backdrop-blur-lg rounded-2xl p-6 border border-white/20">
-              <h2 className="text-xl font-bold text-white mb-6">
-                Distribuzione Geografica
-              </h2>
-              <ResponsiveContainer width="100%" height={400}>
-                <BarChart data={geoAllocation.slice(0, 10)} layout="vertical">
-                  <CartesianGrid strokeDasharray="3 3" stroke="#ffffff20" />
-                  <XAxis
-                    type="number"
-                    stroke="#94a3b8"
-                    tickFormatter={(value) => `€${(value / 1000).toFixed(0)}k`}
-                  />
-                  <YAxis
-                    dataKey="name"
-                    type="category"
-                    stroke="#94a3b8"
-                    width={100}
-                  />
-                  <Tooltip
-                    contentStyle={{
-                      backgroundColor: '#1e293b',
-                      border: '1px solid #475569',
-                      borderRadius: '8px',
-                    }}
-                    formatter={(value: any) => formatCurrency(value)}
-                  />
-                  <Bar dataKey="value" fill="#3b82f6" radius={[0, 8, 8, 0]} />
-                </BarChart>
-              </ResponsiveContainer>
-            </div>
-
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              {geoAllocation.slice(0, 8).map((geo, idx) => {
-                const totalValue = geoAllocation.reduce(
-                  (sum, g) => sum + g.value,
-                  0
-                );
-                const pct = ((geo.value / totalValue) * 100).toFixed(1);
-                return (
-                  <div
-                    key={idx}
-                    className="bg-white/10 backdrop-blur-lg rounded-xl p-4 border border-white/20"
-                  >
-                    <div className="flex justify-between items-center mb-2">
-                      <span className="text-white font-medium">{geo.name}</span>
-                      <span className="text-blue-300 font-bold">{pct}%</span>
-                    </div>
-                    <div className="text-lg font-bold text-white mb-2">
-                      {formatCurrency(geo.value)}
-                    </div>
-                    <div className="w-full bg-white/20 rounded-full h-2">
-                      <div
-                        className="h-2 rounded-full"
-                        style={{
-                          width: `${pct}%`,
-                          backgroundColor: getColorByIndex(idx),
-                        }}
-                      />
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          </div>
+        {/* Analysis Tab - ETF Composition Analysis */}
+        {activeTab === 'analysis' && (
+          <PortfolioAnalysis
+            availablePortfolios={portfolios.map(p => ({
+              portfolio_id: p.portfolio_id,
+              name: p.name
+            }))}
+            selectedPortfolioId={selectedPortfolio?.portfolio_id || null}
+          />
         )}
 
         {/* MODALS */}
@@ -1093,7 +1096,81 @@ export default function Home() {
             onSuccess={refreshData}
           />
         )}
+
+        {/* Allocation/Risk Stats Detail Modal */}
+        {showAllocationDetail && (
+          <Modal
+            title={`Dettagli: ${showAllocationDetail.asset_type}`}
+            onClose={() => setShowAllocationDetail(null)}
+            size="large"
+          >
+            <div className="overflow-x-auto">
+              <table className="w-full">
+                <thead>
+                  <tr className="border-b border-white/20">
+                    <th className="text-left py-3 px-4 text-sm font-medium text-gray-300">Asset</th>
+                    <th className="text-left py-3 px-4 text-sm font-medium text-gray-300">Ticker</th>
+                    {showAllocationDetail.asset_type.includes('ISR') || showAllocationDetail.asset_type.includes('Deviazione') || showAllocationDetail.asset_type.includes('Sharpe') ? (
+                      <>
+                        <th className="text-right py-3 px-4 text-sm font-medium text-gray-300">ISR</th>
+                        <th className="text-right py-3 px-4 text-sm font-medium text-gray-300">Dev. Std.</th>
+                        <th className="text-right py-3 px-4 text-sm font-medium text-gray-300">Sharpe</th>
+                        <th className="text-right py-3 px-4 text-sm font-medium text-gray-300">Peso %</th>
+                      </>
+                    ) : (
+                      <>
+                        <th className="text-right py-3 px-4 text-sm font-medium text-gray-300">Valore</th>
+                        <th className="text-right py-3 px-4 text-sm font-medium text-gray-300">Peso %</th>
+                      </>
+                    )}
+                  </tr>
+                </thead>
+                <tbody>
+                  {showAllocationDetail.details.map((detail: any, index: number) => (
+                    <tr key={index} className="border-b border-white/10">
+                      <td className="py-3 px-4 text-sm text-white">{detail.asset_name || detail.name}</td>
+                      <td className="py-3 px-4 text-sm text-gray-400">{detail.ticker || 'N/A'}</td>
+                      {showAllocationDetail.asset_type.includes('ISR') || showAllocationDetail.asset_type.includes('Deviazione') || showAllocationDetail.asset_type.includes('Sharpe') ? (
+                        <>
+                          <td className="py-3 px-4 text-sm text-right text-white">
+                            {detail.isr !== null && detail.isr !== undefined ? detail.isr.toFixed(2) : 'N/A'}
+                          </td>
+                          <td className="py-3 px-4 text-sm text-right text-white">
+                            {detail.standard_deviation !== null && detail.standard_deviation !== undefined ? `${detail.standard_deviation.toFixed(2)}%` : 'N/A'}
+                          </td>
+                          <td className="py-3 px-4 text-sm text-right text-white">
+                            {detail.sharpe_ratio !== null && detail.sharpe_ratio !== undefined ? detail.sharpe_ratio.toFixed(2) : 'N/A'}
+                          </td>
+                          <td className="py-3 px-4 text-sm text-right font-medium text-blue-400">
+                            {detail.weight_percent ? detail.weight_percent.toFixed(2) : '0.00'}%
+                          </td>
+                        </>
+                      ) : (
+                        <>
+                          <td className="py-3 px-4 text-sm text-right text-white">
+                            {formatCurrency(detail.current_value || 0)}
+                          </td>
+                          <td className="py-3 px-4 text-sm text-right font-medium text-blue-400">
+                            {detail.ownership_pct ? parseFloat(String(detail.ownership_pct)).toFixed(2) : '0.00'}%
+                          </td>
+                        </>
+                      )}
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </Modal>
+        )}
       </div>
     </div>
+  );
+}
+
+export default function Home() {
+  return (
+    <ToastProvider>
+      <HomeContent />
+    </ToastProvider>
   );
 }

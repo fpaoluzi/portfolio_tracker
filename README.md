@@ -19,6 +19,7 @@ Portfolio Tracker Pro è un'applicazione completa per la gestione e il monitorag
 
 - **Node.js** 16+ ([Download](https://nodejs.org/))
 - **PostgreSQL** 12+ ([Download](https://www.postgresql.org/download/))
+- **Ollama** ([Download](https://ollama.ai/)) - Per estrazione dati ETF
 - **npm** o **yarn**
 
 ## 🚀 Installazione
@@ -170,6 +171,46 @@ Routes organizzate per entità con registrazione centralizzata in `index.js`
 | GET | `/api/portfolios/:id/monthly-performance` | Lista performance mensili salvate |
 | GET | `/api/portfolios/:id/monthly-performance-aggregate` | Performance aggregate per mese |
 
+### ETF Composition (Nuovo!)
+
+| Method | Endpoint | Descrizione |
+|--------|----------|-------------|
+| GET | `/api/etf-composition/asset/:assetId` | Recupera composizione salvata per un asset |
+| POST | `/api/etf-composition/asset/:assetId/fetch` | Fetch e salva composizione da JustETF (via Playwright + Ollama) |
+| GET | `/api/etf-composition/portfolio/:portfolioId` | Composizione aggregata portafoglio (pesata) |
+| GET | `/api/etf-composition/portfolios/multiple?portfolioIds=id1,id2` | Composizione aggregata multi-portafoglio |
+
+**Sistema di Scraping Automatico:**
+Il sistema utilizza **Playwright** per navigare automaticamente su JustETF.com e raccogliere i dati completi degli ETF. I dati vengono poi estratti usando **Ollama** (LLM locale) per parsing intelligente dell'HTML.
+
+**Dati estratti da JustETF:**
+- **Top Holdings**: Prime 10-15 aziende nell'ETF con percentuali
+- **Sector Weights**: Distribuzione settoriale (Technology, Healthcare, ecc.)
+- **Geographic Breakdown**: Distribuzione geografica (US, Europe, Asia, ecc.)
+- **Asset Allocation**: Allocazione per classe (Equity, Bond, Cash, ecc.)
+- **Bond Ratings**: Qualità obbligazioni (AAA, AA, A, BBB, ecc.) - per ETF obbligazionari
+- **Bond Maturity**: Scadenze obbligazioni (0-1Y, 1-3Y, 5-10Y, ecc.) - per ETF obbligazionari
+- **TER**: Total Expense Ratio (costi di gestione)
+- **Distribution Policy**: Politica di distribuzione (Accumulating/Distributing)
+
+**Setup Ollama:**
+```bash
+# Installa Ollama (https://ollama.ai/)
+# Scarica il modello richiesto
+ollama pull llama3
+
+# Avvia Ollama (se non già in esecuzione)
+ollama serve
+```
+
+**Test del Sistema:**
+```bash
+cd backend
+node test-scraping.js
+```
+
+Questo script testa l'intero flusso: scraping JustETF → estrazione Ollama → JSON strutturato
+
 ### Health
 
 | Method | Endpoint | Descrizione |
@@ -190,12 +231,22 @@ Routes organizzate per entità con registrazione centralizzata in `index.js`
 - **target_allocations** - Obiettivi allocazione
 - **monthly_position_performance** - Performance mensili per asset
 
+### Tabelle Composizione ETF (Nuovo!)
+
+- **etf_holdings** - Top holdings (10-15 aziende) per ogni ETF
+- **etf_sector_weights** - Distribuzione settoriale per ETF
+- **etf_geographic_weights** - Distribuzione geografica per ETF
+- **etf_asset_allocation** - Allocazione per asset class (Equity/Bond/Cash)
+- **etf_bond_ratings** - Qualità obbligazioni per ETF obbligazionari
+- **etf_bond_maturity** - Scadenze obbligazioni per ETF obbligazionari
+
 ### Viste
 
 - **v_current_positions** - Posizioni con gain/loss e percentuali
 - **v_asset_allocation** - Allocazione per tipo asset
 - **v_portfolio_performance** - Performance totale portfolio
 - **v_monthly_portfolio_performance** - Performance mensili aggregate
+- **v_etf_composition_summary** - Riepilogo dati composizione disponibili per asset
 
 ### Trigger Automatici
 
@@ -257,6 +308,81 @@ cd backend
 npm run import
 # Oppure: node import.js NomeFileExcel.xlsx
 ```
+
+## 🎯 Analisi Composizione ETF (Nuovo!)
+
+La nuova funzionalità di analisi composizione ETF permette di ottenere informazioni dettagliate sulla composizione degli ETF presenti nei tuoi portafogli.
+
+### Come Funziona
+
+1. **Recupera dati da Yahoo Finance** per un singolo asset:
+
+```bash
+# Via API
+POST /api/etf-composition/asset/{assetId}/fetch
+
+# Esempio con curl
+curl -X POST http://localhost:3001/api/etf-composition/asset/YOUR_ASSET_ID/fetch
+```
+
+2. **Visualizza dati salvati** per un asset:
+
+```bash
+GET /api/etf-composition/asset/{assetId}
+```
+
+3. **Analisi aggregata portafoglio** (ponderata per valore posizioni):
+
+```bash
+# Singolo portafoglio
+GET /api/etf-composition/portfolio/{portfolioId}
+
+# Multi-portafoglio
+GET /api/etf-composition/portfolios/multiple?portfolioIds=id1,id2,id3
+```
+
+### Dati Disponibili
+
+Per ogni ETF vengono recuperati:
+
+- **Top Holdings**: Le 10-15 principali aziende con percentuali di peso
+- **Sector Weights**: Distribuzione per settore (Technology 25%, Healthcare 15%, ecc.)
+- **Geographic Breakdown**: Distribuzione geografica (US 60%, Europe 25%, Asia 15%)
+- **Asset Allocation**: Allocazione per classe (Equity 85%, Bond 10%, Cash 5%)
+- **Bond Ratings** (per ETF obbligazionari): AAA, AA, A, BBB, ecc.
+- **Bond Maturity** (per ETF obbligazionari): 0-1Y, 1-3Y, 3-5Y, 5-10Y, 10-20Y, 20+Y
+
+### Frontend - Componente PortfolioAnalysis
+
+Il componente React `PortfolioAnalysis` fornisce:
+
+- **Selezione Multi-Portfolio**: Seleziona uno o più portafogli per l'analisi
+- **Visualizzazione con Tabs**: Holdings, Settori, Geografia, Asset Allocation
+- **Grafici Interattivi**: Pie charts e bar charts per ogni categoria
+- **Tabelle Dettagliate**: Percentuali precise per ogni voce
+- **Aggiornamento Manuale**: Pulsante per refreshare i dati da Yahoo Finance
+
+### Esempio di Utilizzo
+
+```javascript
+import { PortfolioAnalysis } from './components/features/analysis/PortfolioAnalysis';
+
+// Nel tuo componente React
+<PortfolioAnalysis
+  availablePortfolios={[
+    { portfolio_id: 'uuid-1', name: 'Fineco' },
+    { portfolio_id: 'uuid-2', name: 'ING' }
+  ]}
+/>
+```
+
+### Note Importanti
+
+- I dati vengono salvati nel database e possono essere riutilizzati
+- L'aggiornamento è manuale tramite pulsante (evita rate limiting Yahoo Finance)
+- I dati sono disponibili solo per ETF con ticker valido
+- L'analisi multi-portfolio è ponderata per il valore delle posizioni
+- Alcuni ETF potrebbero non avere tutti i dati disponibili (es. bond data solo per ETF obbligazionari)
 
 ## 🐛 Troubleshooting
 

@@ -12,6 +12,7 @@
     "react": "^19.2.0",
     "react-dom": "^19.2.0",
     "react-scripts": "^5.0.1",
+    "react-simple-maps": "^3.0.0",
     "recharts": "^3.3.0",
     "web-vitals": "^2.1.4"
   },
@@ -19,6 +20,7 @@
     "@types/node": "^24.10.0",
     "@types/react": "^19.2.2",
     "@types/react-dom": "^19.2.2",
+    "@types/react-simple-maps": "^3.0.6",
     "autoprefixer": "^10.4.16",
     "postcss": "^8.4.32",
     "tailwindcss": "^3.3.0",
