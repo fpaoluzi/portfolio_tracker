@@ -88,3 +88,4 @@ package-lock.json.bak
 yarn.lock.bak
 .claude/settings.local.json
 NUL
+StartProfileTracker.bat
