@@ -8,15 +8,13 @@ const express = require('express');
 const router = express.Router();
 
 // Import moduli di analisi
-const {
-  holdingsAnalysis,
-  sectorAnalysis,
-  geographicAnalysis,
-  allocationAnalysis,
-  bondRatingAnalysis,
-  bondMaturityAnalysis,
-  riskStatsAnalysis,
-} = require('../controllers/etfCompositionController');
+const holdingsAnalysis = require('../controllers/composition/holdingsAnalysis');
+const sectorAnalysis = require('../controllers/composition/sectorAnalysis');
+const geographicAnalysis = require('../controllers/composition/geographicAnalysis');
+const allocationAnalysis = require('../controllers/composition/allocationAnalysis');
+const bondRatingAnalysis = require('../controllers/composition/bondRatingAnalysis');
+const bondMaturityAnalysis = require('../controllers/composition/bondMaturityAnalysis');
+const riskStatsAnalysis = require('../controllers/composition/riskStatsAnalysis');
 
 // ============================================
 // HOLDINGS ANALYSIS (Top Holdings)

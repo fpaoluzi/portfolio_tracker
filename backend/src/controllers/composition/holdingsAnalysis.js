@@ -1,10 +1,10 @@
 // ============================================
 // HOLDINGS ANALYSIS CONTROLLER
 // Gestisce l'analisi dei singoli titoli detenuti (Top Holdings)
+// LOGICA CORRETTA: Peso reale = Peso_Asset × Peso_Holding
 // ============================================
 
 const pool = require('../../config/database');
-const { calculateLookThrough, calculateMultiPortfolioLookThrough, calculateMultiAssetLookThrough, calculateStats } = require('../../services/compositionCalculator');
 
 /**
  * GET /api/composition/holdings/asset/:assetId
@@ -13,15 +13,57 @@ const { calculateLookThrough, calculateMultiPortfolioLookThrough, calculateMulti
 async function getHoldingsByAsset(req, res) {
   try {
     const { assetId } = req.params;
+    const { limit = 15 } = req.query;
+    const queryLimit = parseInt(limit, 10);
 
-    const result = await pool.query(
-      'SELECT * FROM etf_holdings WHERE asset_id = $1 ORDER BY rank_position',
-      [assetId]
-    );
+    // Query per top holdings
+    const holdingsQuery = `
+      SELECT 
+        holding_symbol,
+        holding_name,
+        holding_percent
+      FROM etf_holdings
+      WHERE asset_id = $1
+      ORDER BY holding_percent DESC
+      ${queryLimit ? `LIMIT ${queryLimit}` : ''}
+    `;
+
+    const result = await pool.query(holdingsQuery, [assetId]);
+
+    // Converti da decimale a percentuale (0.0442 -> 4.42)
+    const holdings = result.rows.map(row => ({
+      holding_symbol: row.holding_symbol,
+      holding_name: row.holding_name,
+      weighted_percent: parseFloat((row.holding_percent * 100).toFixed(2))
+    }));
+
+    // Calcola "Altri" come differenza tra 100% e la somma di TUTTE le holdings
+    const allHoldingsQuery = `
+      SELECT COALESCE(SUM(holding_percent), 0) as total
+      FROM etf_holdings
+      WHERE asset_id = $1
+    `;
+    const totalResult = await pool.query(allHoldingsQuery, [assetId]);
+    const allHoldingsTotal = parseFloat(totalResult.rows[0].total);
+
+    // Somma delle holdings mostrate
+    const shownTotal = holdings.reduce((sum, h) => sum + (h.weighted_percent / 100), 0);
+
+    // Altri = totale di tutte le holdings - holdings mostrate
+    const othersPercent = Math.max(0, (allHoldingsTotal - shownTotal) * 100);
+
+    if (othersPercent > 0.01) {
+      holdings.push({
+        holding_symbol: null,
+        holding_name: 'Altri',
+        weighted_percent: parseFloat(othersPercent.toFixed(2))
+      });
+    }
 
     res.json({
-      holdings: result.rows,
-      count: result.rows.length,
+      holdings,
+      count: holdings.length,
+      totalPercent: parseFloat((allHoldingsTotal * 100).toFixed(2))
     });
   } catch (err) {
     console.error('Error in getHoldingsByAsset:', err);
@@ -32,6 +74,7 @@ async function getHoldingsByAsset(req, res) {
 /**
  * GET /api/composition/holdings/portfolio/:portfolioId
  * Recupera holdings aggregate per un portafoglio (look-through corretto)
+ * Formula: Peso_Reale = Peso_Asset_nel_Portafoglio × Peso_Holding_in_Asset
  */
 async function getHoldingsByPortfolio(req, res) {
   try {
@@ -40,82 +83,73 @@ async function getHoldingsByPortfolio(req, res) {
     const shouldExpand = expand === 'true' || expand === true;
     const queryLimit = shouldExpand ? null : parseInt(limit, 10);
 
-    // Query per holdings (con limit opzionale)
-    // Calcolo corretto:
-    // 1. Calcola il controvalore assoluto di ogni holding: holding_percent * current_value
-    // 2. Somma i controvalori assoluti per holding
-    // 3. Dividi per il TOTALE degli asset che hanno holdings (somma DISTINCT dei current_value)
+    // Query con calcolo corretto del peso reale
     const query = `
-      WITH assets_with_holdings AS (
-        SELECT DISTINCT p.asset_id, p.current_value
-        FROM etf_holdings h
-        JOIN v_current_positions p ON h.asset_id = p.asset_id
-        WHERE p.portfolio_id = $1
-          AND h.holding_name NOT IN ('Altri', 'Other', 'Others', 'Altro')
-          AND (h.holding_symbol IS NOT NULL AND h.holding_symbol != '')
-      ),
-      total_holdings_value AS (
-        SELECT COALESCE(SUM(current_value), 0) AS total_value
-        FROM assets_with_holdings
-      ),
-      all_holdings_total AS (
-        SELECT COALESCE(SUM(h.holding_percent * p.current_value), 0) AS total_holdings_sum
-        FROM etf_holdings h
-        JOIN v_current_positions p ON h.asset_id = p.asset_id
-        CROSS JOIN total_holdings_value
-        WHERE p.portfolio_id = $1
+      WITH asset_weights AS (
+        -- Calcola il peso di ogni asset nel portafoglio
+        SELECT 
+          asset_id,
+          current_value,
+          current_value / SUM(current_value) OVER() as asset_weight
+        FROM v_current_positions
+        WHERE portfolio_id = $1
       )
       SELECT
         h.holding_symbol,
-        MIN(h.holding_name) AS holding_name,
-        SUM(h.holding_percent * p.current_value) / NULLIF((SELECT total_value FROM total_holdings_value), 0) AS weighted_percent,
-        (SELECT total_holdings_sum FROM all_holdings_total) / NULLIF((SELECT total_value FROM total_holdings_value), 0) AS total_percent
+        h.holding_name,
+        SUM(aw.asset_weight * h.holding_percent) as real_weight
       FROM etf_holdings h
-      JOIN v_current_positions p ON h.asset_id = p.asset_id
-      CROSS JOIN total_holdings_value
-      WHERE p.portfolio_id = $1
-        AND h.holding_name NOT IN ('Altri', 'Other', 'Others', 'Altro')
-        AND (h.holding_symbol IS NOT NULL AND h.holding_symbol != '')
-      GROUP BY h.holding_symbol
-      ORDER BY weighted_percent DESC
+      JOIN asset_weights aw ON h.asset_id = aw.asset_id
+      WHERE h.holding_symbol IS NOT NULL AND h.holding_symbol != ''
+      GROUP BY h.holding_symbol, h.holding_name
+      ORDER BY real_weight DESC
       ${queryLimit ? `LIMIT ${queryLimit}` : ''}
     `;
 
     const result = await pool.query(query, [portfolioId]);
 
-    // weighted_percent è già in formato decimale (0-1) dalla query SQL
-    // Il frontend si aspetta formato decimale e moltiplica per 100 per la visualizzazione
-    const holdings = result.rows
-      .filter(row => row.weighted_percent != null && !isNaN(row.weighted_percent))
-      .map(row => ({
-        holding_symbol: row.holding_symbol,
-        holding_name: row.holding_name,
-        weighted_percent: parseFloat(Number(row.weighted_percent).toFixed(4))
-      }));
+    // Converti da decimale a percentuale
+    const holdings = result.rows.map(row => ({
+      holding_symbol: row.holding_symbol,
+      holding_name: row.holding_name,
+      weighted_percent: parseFloat((row.real_weight * 100).toFixed(2))
+    }));
 
-    // Calcola la somma delle percentuali mostrate
-    const totalShown = holdings.reduce((sum, h) => sum + h.weighted_percent, 0);
-    
-    // Il totale dovrebbe essere sempre 1.0 (100%) perché dividiamo per il totale degli asset
-    // "Altri" è la differenza tra 100% e la somma delle holdings mostrate
-    const othersPercent = Math.max(0, 1.0 - totalShown);
-    
-    // Aggiungi "Altri" se > 0
-    if (othersPercent > 0.0001) {
+    // Calcola il totale di TUTTE le holdings (non solo quelle mostrate)
+    const allHoldingsQuery = `
+      WITH asset_weights AS (
+        SELECT 
+          asset_id,
+          current_value / SUM(current_value) OVER() as asset_weight
+        FROM v_current_positions
+        WHERE portfolio_id = $1
+      )
+      SELECT
+        COALESCE(SUM(aw.asset_weight * h.holding_percent), 0) as total
+      FROM etf_holdings h
+      JOIN asset_weights aw ON h.asset_id = aw.asset_id
+    `;
+    const totalResult = await pool.query(allHoldingsQuery, [portfolioId]);
+    const allHoldingsTotal = parseFloat(totalResult.rows[0].total);
+
+    // Somma delle holdings mostrate
+    const shownTotal = holdings.reduce((sum, h) => sum + (h.weighted_percent / 100), 0);
+
+    // Altri = totale - mostrate
+    const othersPercent = Math.max(0, (allHoldingsTotal - shownTotal) * 100);
+
+    if (othersPercent > 0.01) {
       holdings.push({
         holding_symbol: null,
         holding_name: 'Altri',
-        weighted_percent: parseFloat(othersPercent.toFixed(4))
+        weighted_percent: parseFloat(othersPercent.toFixed(2))
       });
     }
 
-    const stats = calculateStats(holdings);
-
     res.json({
       holdings,
-      stats,
       count: holdings.length,
-      totalPercent: 1.0, // Sempre 100% quando includiamo "Altri"
+      totalPercent: parseFloat((allHoldingsTotal * 100).toFixed(2))
     });
   } catch (err) {
     console.error('Error in getHoldingsByPortfolio:', err);
@@ -139,78 +173,65 @@ async function getHoldingsByMultiplePortfolios(req, res) {
     const shouldExpand = expand === 'true' || expand === true;
     const queryLimit = shouldExpand ? null : parseInt(limit, 10);
 
-    // Calcolo corretto: divide per il totale degli asset che hanno holdings (somma DISTINCT)
     const query = `
-      WITH assets_with_holdings AS (
-        SELECT DISTINCT p.asset_id, p.current_value
-        FROM etf_holdings h
-        JOIN v_current_positions p ON h.asset_id = p.asset_id
-        WHERE p.portfolio_id = ANY($1)
-          AND h.holding_name NOT IN ('Altri', 'Other', 'Others', 'Altro')
-          AND (h.holding_symbol IS NOT NULL AND h.holding_symbol != '')
-      ),
-      total_holdings_value AS (
-        SELECT COALESCE(SUM(current_value), 0) AS total_value
-        FROM assets_with_holdings
-      ),
-      all_holdings_total AS (
-        SELECT COALESCE(SUM(h.holding_percent * p.current_value), 0) AS total_holdings_sum
-        FROM etf_holdings h
-        JOIN v_current_positions p ON h.asset_id = p.asset_id
-        CROSS JOIN total_holdings_value
-        WHERE p.portfolio_id = ANY($1)
+      WITH asset_weights AS (
+        SELECT 
+          asset_id,
+          current_value / SUM(current_value) OVER() as asset_weight
+        FROM v_current_positions
+        WHERE portfolio_id = ANY($1)
       )
       SELECT
         h.holding_symbol,
-        MIN(h.holding_name) AS holding_name,
-        SUM(h.holding_percent * p.current_value) / NULLIF((SELECT total_value FROM total_holdings_value), 0) AS weighted_percent,
-        (SELECT total_holdings_sum FROM all_holdings_total) / NULLIF((SELECT total_value FROM total_holdings_value), 0) AS total_percent
+        h.holding_name,
+        SUM(aw.asset_weight * h.holding_percent) as real_weight
       FROM etf_holdings h
-      JOIN v_current_positions p ON h.asset_id = p.asset_id
-      CROSS JOIN total_holdings_value
-      WHERE p.portfolio_id = ANY($1)
-        AND h.holding_name NOT IN ('Altri', 'Other', 'Others', 'Altro')
-        AND (h.holding_symbol IS NOT NULL AND h.holding_symbol != '')
-      GROUP BY h.holding_symbol
-      ORDER BY weighted_percent DESC
+      JOIN asset_weights aw ON h.asset_id = aw.asset_id
+      WHERE h.holding_symbol IS NOT NULL AND h.holding_symbol != ''
+      GROUP BY h.holding_symbol, h.holding_name
+      ORDER BY real_weight DESC
       ${queryLimit ? `LIMIT ${queryLimit}` : ''}
     `;
 
     const result = await pool.query(query, [ids]);
 
-    // weighted_percent è già in formato decimale (0-1) dalla query SQL
-    // Il frontend si aspetta formato decimale e moltiplica per 100 per la visualizzazione
-    const holdings = result.rows
-      .filter(row => row.weighted_percent != null && !isNaN(row.weighted_percent))
-      .map(row => ({
-        holding_symbol: row.holding_symbol,
-        holding_name: row.holding_name,
-        weighted_percent: parseFloat(Number(row.weighted_percent).toFixed(4))
-      }));
+    const holdings = result.rows.map(row => ({
+      holding_symbol: row.holding_symbol,
+      holding_name: row.holding_name,
+      weighted_percent: parseFloat((row.real_weight * 100).toFixed(2))
+    }));
 
-    // Calcola la somma delle percentuali mostrate
-    const totalShown = holdings.reduce((sum, h) => sum + h.weighted_percent, 0);
-    
-    // Il totale dovrebbe essere sempre 1.0 (100%) perché dividiamo per il totale degli asset
-    // "Altri" è la differenza tra 100% e la somma delle holdings mostrate
-    const othersPercent = Math.max(0, 1.0 - totalShown);
-    
-    // Aggiungi "Altri" se > 0
-    if (othersPercent > 0.0001) {
+    const allHoldingsQuery = `
+      WITH asset_weights AS (
+        SELECT 
+          asset_id,
+          current_value / SUM(current_value) OVER() as asset_weight
+        FROM v_current_positions
+        WHERE portfolio_id = ANY($1)
+      )
+      SELECT
+        COALESCE(SUM(aw.asset_weight * h.holding_percent), 0) as total
+      FROM etf_holdings h
+      JOIN asset_weights aw ON h.asset_id = aw.asset_id
+    `;
+    const totalResult = await pool.query(allHoldingsQuery, [ids]);
+    const allHoldingsTotal = parseFloat(totalResult.rows[0].total);
+
+    const shownTotal = holdings.reduce((sum, h) => sum + (h.weighted_percent / 100), 0);
+    const othersPercent = Math.max(0, (allHoldingsTotal - shownTotal) * 100);
+
+    if (othersPercent > 0.01) {
       holdings.push({
         holding_symbol: null,
         holding_name: 'Altri',
-        weighted_percent: parseFloat(othersPercent.toFixed(4))
+        weighted_percent: parseFloat(othersPercent.toFixed(2))
       });
     }
 
-    const stats = calculateStats(holdings);
-
     res.json({
       holdings,
-      stats,
       count: holdings.length,
-      totalPercent: 1.0, // Sempre 100% quando includiamo "Altri"
+      totalPercent: parseFloat((allHoldingsTotal * 100).toFixed(2))
     });
   } catch (err) {
     console.error('Error in getHoldingsByMultiplePortfolios:', err);
@@ -234,105 +255,100 @@ async function getHoldingsByMultipleAssets(req, res) {
     const shouldExpand = expand === 'true' || expand === true;
     const queryLimit = shouldExpand ? null : parseInt(limit, 10);
 
-    let query, params;
+    let query, params, allHoldingsQuery, allParams;
 
     if (portfolioId) {
-      // Pesa in base al valore delle posizioni nel portafoglio
-      // Calcolo corretto: divide per il totale degli asset selezionati che hanno holdings (somma DISTINCT)
+      // Con portfolioId: calcola peso reale considerando il valore degli asset
       query = `
-        WITH assets_with_holdings AS (
-          SELECT DISTINCT p.asset_id, p.current_value
-          FROM etf_holdings h
-          JOIN v_current_positions p ON h.asset_id = p.asset_id
-          WHERE h.asset_id = ANY($1) AND p.portfolio_id = $2
-            AND h.holding_name NOT IN ('Altri', 'Other', 'Others', 'Altro')
-            AND (h.holding_symbol IS NOT NULL AND h.holding_symbol != '')
-        ),
-        total_holdings_value AS (
-          SELECT COALESCE(SUM(current_value), 0) AS total_value
-          FROM assets_with_holdings
-        ),
-        all_holdings_total AS (
-          SELECT COALESCE(SUM(h.holding_percent * p.current_value), 0) AS total_holdings_sum
-          FROM etf_holdings h
-          JOIN v_current_positions p ON h.asset_id = p.asset_id
-          CROSS JOIN total_holdings_value
-          WHERE h.asset_id = ANY($1) AND p.portfolio_id = $2
+        WITH asset_weights AS (
+          SELECT 
+            asset_id,
+            current_value / SUM(current_value) OVER() as asset_weight
+          FROM v_current_positions
+          WHERE portfolio_id = $2 AND asset_id = ANY($1)
         )
         SELECT
           h.holding_symbol,
-          MIN(h.holding_name) AS holding_name,
-          SUM(h.holding_percent * p.current_value) / NULLIF((SELECT total_value FROM total_holdings_value), 0) AS weighted_percent,
-          (SELECT total_holdings_sum FROM all_holdings_total) / NULLIF((SELECT total_value FROM total_holdings_value), 0) AS total_percent
+          h.holding_name,
+          SUM(aw.asset_weight * h.holding_percent) as real_weight
         FROM etf_holdings h
-        JOIN v_current_positions p ON h.asset_id = p.asset_id
-        CROSS JOIN total_holdings_value
-        WHERE h.asset_id = ANY($1) AND p.portfolio_id = $2
-          AND h.holding_name NOT IN ('Altri', 'Other', 'Others', 'Altro')
-          AND (h.holding_symbol IS NOT NULL AND h.holding_symbol != '')
-        GROUP BY h.holding_symbol
-        ORDER BY weighted_percent DESC
+        JOIN asset_weights aw ON h.asset_id = aw.asset_id
+        WHERE h.holding_symbol IS NOT NULL AND h.holding_symbol != ''
+        GROUP BY h.holding_symbol, h.holding_name
+        ORDER BY real_weight DESC
         ${queryLimit ? `LIMIT ${queryLimit}` : ''}
       `;
       params = [ids, portfolioId];
+
+      allHoldingsQuery = `
+        WITH asset_weights AS (
+          SELECT 
+            asset_id,
+            current_value / SUM(current_value) OVER() as asset_weight
+          FROM v_current_positions
+          WHERE portfolio_id = $2 AND asset_id = ANY($1)
+        )
+        SELECT
+          COALESCE(SUM(aw.asset_weight * h.holding_percent), 0) as total
+        FROM etf_holdings h
+        JOIN asset_weights aw ON h.asset_id = aw.asset_id
+      `;
+      allParams = [ids, portfolioId];
     } else {
-      // Peso uguale per tutti gli asset (media semplice)
-      // Nota: senza portfolioId non possiamo calcolare "Altri" accuratamente
+      // Senza portfolioId: media semplice (peso uguale per ogni asset)
       query = `
         SELECT
           h.holding_symbol,
-          MIN(h.holding_name) AS holding_name,
-          AVG(h.holding_percent) AS weighted_percent
+          h.holding_name,
+          AVG(h.holding_percent) as real_weight
         FROM etf_holdings h
         WHERE h.asset_id = ANY($1)
-          AND h.holding_name NOT IN ('Altri', 'Other', 'Others', 'Altro')
-          AND (h.holding_symbol IS NOT NULL AND h.holding_symbol != '')
-        GROUP BY h.holding_symbol
-        ORDER BY weighted_percent DESC
+          AND h.holding_symbol IS NOT NULL AND h.holding_symbol != ''
+        GROUP BY h.holding_symbol, h.holding_name
+        ORDER BY real_weight DESC
         ${queryLimit ? `LIMIT ${queryLimit}` : ''}
       `;
       params = [ids];
+
+      allHoldingsQuery = `
+        SELECT
+          COALESCE(AVG(total_per_asset), 0) as total
+        FROM (
+          SELECT asset_id, SUM(holding_percent) as total_per_asset
+          FROM etf_holdings
+          WHERE asset_id = ANY($1)
+          GROUP BY asset_id
+        ) t
+      `;
+      allParams = [ids];
     }
 
     const result = await pool.query(query, params);
 
-    // weighted_percent è già in formato decimale (0-1) dalla query SQL
-    // Quando portfolioId è presente, la query usa SUM con current_value (formato decimale)
-    // Quando portfolioId non è presente, la query usa AVG (formato decimale)
-    // Il frontend si aspetta formato decimale e moltiplica per 100 per la visualizzazione
-    const holdings = result.rows
-      .filter(row => row.weighted_percent != null && !isNaN(row.weighted_percent))
-      .map(row => ({
-        holding_symbol: row.holding_symbol,
-        holding_name: row.holding_name,
-        weighted_percent: parseFloat(Number(row.weighted_percent).toFixed(4))
-      }));
+    const holdings = result.rows.map(row => ({
+      holding_symbol: row.holding_symbol,
+      holding_name: row.holding_name,
+      weighted_percent: parseFloat((row.real_weight * 100).toFixed(2))
+    }));
 
-    // Calcola "Altri" solo se portfolioId è presente
-    if (portfolioId && result.rows.length > 0) {
-      const totalShown = holdings.reduce((sum, h) => sum + h.weighted_percent, 0);
-      // Il totale dovrebbe essere sempre 1.0 (100%) perché dividiamo per il totale degli asset
-      // "Altri" è la differenza tra 100% e la somma delle holdings mostrate
-      const othersPercent = Math.max(0, 1.0 - totalShown);
-      
-      if (othersPercent > 0.0001) {
-        holdings.push({
-          holding_symbol: null,
-          holding_name: 'Altri',
-          weighted_percent: parseFloat(othersPercent.toFixed(4))
-        });
-      }
+    const totalResult = await pool.query(allHoldingsQuery, allParams);
+    const allHoldingsTotal = parseFloat(totalResult.rows[0].total);
+
+    const shownTotal = holdings.reduce((sum, h) => sum + (h.weighted_percent / 100), 0);
+    const othersPercent = Math.max(0, (allHoldingsTotal - shownTotal) * 100);
+
+    if (othersPercent > 0.01) {
+      holdings.push({
+        holding_symbol: null,
+        holding_name: 'Altri',
+        weighted_percent: parseFloat(othersPercent.toFixed(2))
+      });
     }
-
-    const stats = calculateStats(holdings);
 
     res.json({
       holdings,
-      stats,
       count: holdings.length,
-      totalPercent: portfolioId && result.rows.length > 0 
-        ? parseFloat(Number(result.rows[0].total_percent || 0).toFixed(4))
-        : undefined,
+      totalPercent: parseFloat((allHoldingsTotal * 100).toFixed(2))
     });
   } catch (err) {
     console.error('Error in getHoldingsByMultipleAssets:', err);
@@ -419,9 +435,6 @@ async function deleteHoldingsByAsset(req, res) {
 /**
  * GET /api/composition/holdings/detail
  * Recupera dettagli degli asset che contengono una specifica holding
- * Query params: portfolioId, holdingSymbol, holdingName
- * Se holdingSymbol è fornito, filtra solo per symbol (ignora holdingName nel filtro)
- * Aggrega per asset_id sommando le percentuali delle holdings con lo stesso symbol
  */
 async function getHoldingDetail(req, res) {
   try {
@@ -431,13 +444,9 @@ async function getHoldingDetail(req, res) {
       return res.status(400).json({ error: 'portfolioId e holdingSymbol o holdingName richiesti' });
     }
 
-    // Se holdingSymbol è fornito, usa solo quello per filtrare (ignora holdingName nel WHERE)
-    // Aggrega per asset_id sommando le percentuali delle holdings con lo stesso symbol
-    let query;
-    let params;
+    let query, params;
 
     if (holdingSymbol) {
-      // Filtra solo per symbol e aggrega per asset
       query = `
         SELECT
           a.asset_id,
@@ -458,7 +467,6 @@ async function getHoldingDetail(req, res) {
       `;
       params = [portfolioId, holdingSymbol];
     } else {
-      // Se solo holdingName è fornito, filtra per nome (comportamento legacy)
       query = `
         SELECT
           a.asset_id,
@@ -487,18 +495,16 @@ async function getHoldingDetail(req, res) {
       current_value: parseFloat(row.current_value),
       holding_percent: parseFloat((row.holding_percent * 100).toFixed(2)),
       holding_value: parseFloat(row.holding_value),
-      contribution_percent: 0, // Calcolato dopo
+      contribution_percent: 0,
     }));
 
     const total = details.reduce((sum, d) => sum + d.holding_value, 0);
 
-    // Calcola il contributo percentuale per ogni asset
     const detailsWithContribution = details.map(d => ({
       ...d,
       contribution_percent: total > 0 ? parseFloat(((d.holding_value / total) * 100).toFixed(2)) : 0,
     }));
 
-    // Prendi il nome dalla prima riga se disponibile (per holdingSymbol)
     const firstHoldingName = result.rows.length > 0 ? result.rows[0].holding_name : holdingName;
 
     res.json({

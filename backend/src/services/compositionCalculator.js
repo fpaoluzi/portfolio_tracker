@@ -118,9 +118,10 @@ async function calculateLookThrough(portfolioId, table, categoryColumn, options 
 
   // Converti da decimale (0.255) a percentuale (25.5) se richiesto
   if (options.asPercentage !== false) {
+    // Data is guaranteed to be in decimals (0-1) from normalized views
     result.rows = result.rows.map(row => ({
       ...row,
-      weighted_percent: parseFloat((row.weighted_percent * 100).toFixed(2))
+      weighted_percent: parseFloat((parseFloat(row.weighted_percent) * 100).toFixed(2))
     }));
   }
 
@@ -145,9 +146,10 @@ async function calculateMultiPortfolioLookThrough(portfolioIds, table, categoryC
 
   // Converti da decimale a percentuale se richiesto
   if (options.asPercentage !== false) {
+    // Data is guaranteed to be in decimals (0-1) from normalized views
     result.rows = result.rows.map(row => ({
       ...row,
-      weighted_percent: parseFloat((row.weighted_percent * 100).toFixed(2))
+      weighted_percent: parseFloat((parseFloat(row.weighted_percent) * 100).toFixed(2))
     }));
   }
 
@@ -205,16 +207,11 @@ async function calculateMultiAssetLookThrough(assetIds, portfolioId, table, cate
   const result = await pool.query(query, params);
 
   // Converti da decimale a percentuale se richiesto
-  if (options.asPercentage !== false && !portfolioId) {
-    // Se non c'è portfolio, AVG restituisce già percentuale
+  if (options.asPercentage !== false) {
+    // Data is guaranteed to be in decimals (0-1) from normalized views
     result.rows = result.rows.map(row => ({
       ...row,
-      weighted_percent: parseFloat(row.weighted_percent.toFixed(2))
-    }));
-  } else if (options.asPercentage !== false) {
-    result.rows = result.rows.map(row => ({
-      ...row,
-      weighted_percent: parseFloat((row.weighted_percent * 100).toFixed(2))
+      weighted_percent: parseFloat((parseFloat(row.weighted_percent) * 100).toFixed(2))
     }));
   }
 

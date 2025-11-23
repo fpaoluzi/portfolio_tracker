@@ -1,10 +1,10 @@
 // ============================================
 // SECTOR ANALYSIS CONTROLLER
 // Gestisce l'analisi settoriale (Technology, Healthcare, Financials, etc.)
+// LOGICA CORRETTA: Peso reale = Peso_Asset × Peso_Settore
 // ============================================
 
 const pool = require('../../config/database');
-const { calculateLookThrough, calculateMultiPortfolioLookThrough, calculateMultiAssetLookThrough, calculateStats } = require('../../services/compositionCalculator');
 
 /**
  * GET /api/composition/sectors/asset/:assetId
@@ -13,18 +13,48 @@ const { calculateLookThrough, calculateMultiPortfolioLookThrough, calculateMulti
 async function getSectorsByAsset(req, res) {
   try {
     const { assetId } = req.params;
+    const { limit = 15 } = req.query;
+    const queryLimit = parseInt(limit, 10);
 
-    const result = await pool.query(
-      'SELECT * FROM etf_sector_weights WHERE asset_id = $1 ORDER BY weight_percent DESC',
-      [assetId]
-    );
+    const sectorsQuery = `
+      SELECT 
+        sector_name,
+        weight_percent
+      FROM etf_sector_weights
+      WHERE asset_id = $1
+      ORDER BY weight_percent DESC
+      ${queryLimit ? `LIMIT ${queryLimit}` : ''}
+    `;
 
-    const stats = calculateStats(result.rows);
+    const result = await pool.query(sectorsQuery, [assetId]);
+
+    const sectors = result.rows.map(row => ({
+      sector_name: row.sector_name,
+      weighted_percent: parseFloat((row.weight_percent * 100).toFixed(2))
+    }));
+
+    const allSectorsQuery = `
+      SELECT COALESCE(SUM(weight_percent), 0) as total
+      FROM etf_sector_weights
+      WHERE asset_id = $1
+    `;
+    const totalResult = await pool.query(allSectorsQuery, [assetId]);
+    const allSectorsTotal = parseFloat(totalResult.rows[0].total);
+
+    const shownTotal = sectors.reduce((sum, s) => sum + (s.weighted_percent / 100), 0);
+    const othersPercent = Math.max(0, (allSectorsTotal - shownTotal) * 100);
+
+    if (othersPercent > 0.01) {
+      sectors.push({
+        sector_name: 'Altri',
+        weighted_percent: parseFloat(othersPercent.toFixed(2))
+      });
+    }
 
     res.json({
-      sectors: result.rows,
-      stats,
-      count: result.rows.length,
+      sectors,
+      count: sectors.length,
+      totalPercent: parseFloat((allSectorsTotal * 100).toFixed(2))
     });
   } catch (err) {
     console.error('Error in getSectorsByAsset:', err);
@@ -34,7 +64,7 @@ async function getSectorsByAsset(req, res) {
 
 /**
  * GET /api/composition/sectors/portfolio/:portfolioId
- * Recupera composizione settoriale aggregata per un portafoglio (look-through corretto)
+ * Recupera composizione settoriale aggregata per un portafoglio
  */
 async function getSectorsByPortfolio(req, res) {
   try {
@@ -43,74 +73,62 @@ async function getSectorsByPortfolio(req, res) {
     const shouldExpand = expand === 'true' || expand === true;
     const queryLimit = shouldExpand ? null : parseInt(limit, 10);
 
-    // Prima calcola il totale reale di TUTTE le categorie (incluso quelle escluse)
-    const allSectors = await calculateLookThrough(
-      portfolioId,
-      'etf_sector_weights',
-      'sector_name',
-      {
-        exclude: [], // Non escludere nulla per calcolare il totale reale
-        asPercentage: false, // Restituisci in formato decimale per calcoli
-      }
-    );
+    const query = `
+      WITH asset_weights AS (
+        SELECT 
+          asset_id,
+          current_value / SUM(current_value) OVER() as asset_weight
+        FROM v_current_positions
+        WHERE portfolio_id = $1
+      )
+      SELECT
+        s.sector_name,
+        SUM(aw.asset_weight * s.weight_percent) as real_weight
+      FROM etf_sector_weights s
+      JOIN asset_weights aw ON s.asset_id = aw.asset_id
+      WHERE s.sector_name NOT IN ('Altri', 'Other', 'Others', 'Altro', 'Miscellaneous', 'N/A')
+      GROUP BY s.sector_name
+      ORDER BY real_weight DESC
+      ${queryLimit ? `LIMIT ${queryLimit}` : ''}
+    `;
 
-    // Calcola il totale reale (somma di tutte le categorie)
-    const totalReal = allSectors.reduce((sum, s) => sum + s.weighted_percent, 0);
+    const result = await pool.query(query, [portfolioId]);
 
-    // Log per diagnosticare problemi (se totale > 1.0)
-    if (totalReal > 1.01) {
-      console.warn(`⚠️  Settori sommano a ${(totalReal * 100).toFixed(2)}% per portafoglio ${portfolioId}. Possibili cause: duplicati o dati errati nel database.`);
-    }
-
-    // Ora calcola solo le categorie mostrate (escludendo quelle da filtrare)
-    const sectors = await calculateLookThrough(
-      portfolioId,
-      'etf_sector_weights',
-      'sector_name',
-      {
-        exclude: ['Altri', 'Other', 'Others', 'Altro', 'Miscellaneous', 'N/A'],
-        asPercentage: true, // Restituisci in formato percentuale (25.5 invece di 0.255)
-        limit: queryLimit,
-      }
-    );
-
-    // Converti da percentuale a decimale per calcolare "Altri"
-    const sectorsDecimal = sectors.map(s => ({
-      ...s,
-      weighted_percent: s.weighted_percent / 100
+    const sectors = result.rows.map(row => ({
+      sector_name: row.sector_name,
+      weighted_percent: parseFloat((row.real_weight * 100).toFixed(2))
     }));
 
-    // Calcola la somma delle percentuali mostrate
-    const totalShown = sectorsDecimal.reduce((sum, s) => sum + s.weighted_percent, 0);
-    
-    // "Altri" è la differenza tra il totale reale e la somma delle categorie mostrate
-    // Se il totale reale è > 1.0, significa che alcuni asset hanno settori che sommano a più del 100%
-    const othersPercent = Math.max(0, totalReal - totalShown);
-    
-    // Aggiungi "Altri" se > 0
-    if (othersPercent > 0.0001) {
+    const allSectorsQuery = `
+      WITH asset_weights AS (
+        SELECT 
+          asset_id,
+          current_value / SUM(current_value) OVER() as asset_weight
+        FROM v_current_positions
+        WHERE portfolio_id = $1
+      )
+      SELECT
+        COALESCE(SUM(aw.asset_weight * s.weight_percent), 0) as total
+      FROM etf_sector_weights s
+      JOIN asset_weights aw ON s.asset_id = aw.asset_id
+    `;
+    const totalResult = await pool.query(allSectorsQuery, [portfolioId]);
+    const allSectorsTotal = parseFloat(totalResult.rows[0].total);
+
+    const shownTotal = sectors.reduce((sum, s) => sum + (s.weighted_percent / 100), 0);
+    const othersPercent = Math.max(0, (allSectorsTotal - shownTotal) * 100);
+
+    if (othersPercent > 0.01) {
       sectors.push({
         sector_name: 'Altri',
-        weighted_percent: parseFloat((othersPercent * 100).toFixed(2))
+        weighted_percent: parseFloat(othersPercent.toFixed(2))
       });
     }
-
-    // Normalizza tutte le percentuali al 100% se il totale reale è diverso da 1.0
-    // Questo gestisce il caso in cui alcuni asset hanno settori che sommano a più del 100%
-    if (Math.abs(totalReal - 1.0) > 0.01 && totalReal > 0) {
-      const normalizationFactor = 1.0 / totalReal;
-      sectors.forEach(s => {
-        s.weighted_percent = parseFloat((s.weighted_percent * normalizationFactor).toFixed(2));
-      });
-    }
-
-    const stats = calculateStats(sectors);
 
     res.json({
       sectors,
-      stats,
       count: sectors.length,
-      totalPercent: 100.0, // Sempre 100% quando includiamo "Altri"
+      totalPercent: parseFloat((allSectorsTotal * 100).toFixed(2))
     });
   } catch (err) {
     console.error('Error in getSectorsByPortfolio:', err);
@@ -134,72 +152,62 @@ async function getSectorsByMultiplePortfolios(req, res) {
     const shouldExpand = expand === 'true' || expand === true;
     const queryLimit = shouldExpand ? null : parseInt(limit, 10);
 
-    // Prima calcola il totale reale di TUTTE le categorie (incluso quelle escluse)
-    const allSectors = await calculateMultiPortfolioLookThrough(
-      ids,
-      'etf_sector_weights',
-      'sector_name',
-      {
-        exclude: [], // Non escludere nulla per calcolare il totale reale
-        asPercentage: false, // Restituisci in formato decimale per calcoli
-      }
-    );
+    const query = `
+      WITH asset_weights AS (
+        SELECT 
+          asset_id,
+          current_value / SUM(current_value) OVER() as asset_weight
+        FROM v_current_positions
+        WHERE portfolio_id = ANY($1)
+      )
+      SELECT
+        s.sector_name,
+        SUM(aw.asset_weight * s.weight_percent) as real_weight
+      FROM etf_sector_weights s
+      JOIN asset_weights aw ON s.asset_id = aw.asset_id
+      WHERE s.sector_name NOT IN ('Altri', 'Other', 'Others', 'Altro', 'Miscellaneous', 'N/A')
+      GROUP BY s.sector_name
+      ORDER BY real_weight DESC
+      ${queryLimit ? `LIMIT ${queryLimit}` : ''}
+    `;
 
-    // Calcola il totale reale (somma di tutte le categorie)
-    const totalReal = allSectors.reduce((sum, s) => sum + s.weighted_percent, 0);
+    const result = await pool.query(query, [ids]);
 
-    // Log per diagnosticare problemi (se totale > 1.0)
-    if (totalReal > 1.01) {
-      console.warn(`⚠️  Settori sommano a ${(totalReal * 100).toFixed(2)}% per portafogli ${ids.join(',')}. Possibili cause: duplicati o dati errati nel database.`);
-    }
-
-    // Ora calcola solo le categorie mostrate (escludendo quelle da filtrare)
-    const sectors = await calculateMultiPortfolioLookThrough(
-      ids,
-      'etf_sector_weights',
-      'sector_name',
-      {
-        exclude: ['Altri', 'Other', 'Others', 'Altro', 'Miscellaneous', 'N/A'],
-        asPercentage: true,
-        limit: queryLimit,
-      }
-    );
-
-    // Converti da percentuale a decimale per calcolare "Altri"
-    const sectorsDecimal = sectors.map(s => ({
-      ...s,
-      weighted_percent: s.weighted_percent / 100
+    const sectors = result.rows.map(row => ({
+      sector_name: row.sector_name,
+      weighted_percent: parseFloat((row.real_weight * 100).toFixed(2))
     }));
 
-    // Calcola la somma delle percentuali mostrate
-    const totalShown = sectorsDecimal.reduce((sum, s) => sum + s.weighted_percent, 0);
-    
-    // "Altri" è la differenza tra il totale reale e la somma delle categorie mostrate
-    const othersPercent = Math.max(0, totalReal - totalShown);
-    
-    // Aggiungi "Altri" se > 0
-    if (othersPercent > 0.0001) {
+    const allSectorsQuery = `
+      WITH asset_weights AS (
+        SELECT 
+          asset_id,
+          current_value / SUM(current_value) OVER() as asset_weight
+        FROM v_current_positions
+        WHERE portfolio_id = ANY($1)
+      )
+      SELECT
+        COALESCE(SUM(aw.asset_weight * s.weight_percent), 0) as total
+      FROM etf_sector_weights s
+      JOIN asset_weights aw ON s.asset_id = aw.asset_id
+    `;
+    const totalResult = await pool.query(allSectorsQuery, [ids]);
+    const allSectorsTotal = parseFloat(totalResult.rows[0].total);
+
+    const shownTotal = sectors.reduce((sum, s) => sum + (s.weighted_percent / 100), 0);
+    const othersPercent = Math.max(0, (allSectorsTotal - shownTotal) * 100);
+
+    if (othersPercent > 0.01) {
       sectors.push({
         sector_name: 'Altri',
-        weighted_percent: parseFloat((othersPercent * 100).toFixed(2))
+        weighted_percent: parseFloat(othersPercent.toFixed(2))
       });
     }
-
-    // Normalizza tutte le percentuali al 100% se il totale reale è diverso da 1.0
-    if (Math.abs(totalReal - 1.0) > 0.01 && totalReal > 0) {
-      const normalizationFactor = 1.0 / totalReal;
-      sectors.forEach(s => {
-        s.weighted_percent = parseFloat((s.weighted_percent * normalizationFactor).toFixed(2));
-      });
-    }
-
-    const stats = calculateStats(sectors);
 
     res.json({
       sectors,
-      stats,
       count: sectors.length,
-      totalPercent: 100.0, // Sempre 100% quando includiamo "Altri"
+      totalPercent: parseFloat((allSectorsTotal * 100).toFixed(2))
     });
   } catch (err) {
     console.error('Error in getSectorsByMultiplePortfolios:', err);
@@ -223,134 +231,94 @@ async function getSectorsByMultipleAssets(req, res) {
     const shouldExpand = expand === 'true' || expand === true;
     const queryLimit = shouldExpand ? null : parseInt(limit, 10);
 
-    let sectors;
+    let query, params, allSectorsQuery, allParams;
 
-    // Calcola "Altri" solo se portfolioId è presente (abbiamo calcolo ponderato)
     if (portfolioId) {
-      // Calcolo corretto: divide per il totale di TUTTI gli asset selezionati che hanno dati settoriali
-      // Prima calcola il totale di tutti gli asset con dati settoriali
-      const totalAssetsQuery = `
-        WITH assets_with_sectors AS (
-          SELECT DISTINCT p.asset_id, p.current_value
-          FROM etf_sector_weights s
-          JOIN v_current_positions p ON s.asset_id = p.asset_id
-          WHERE s.asset_id = ANY($1) AND p.portfolio_id = $2
-        )
-        SELECT COALESCE(SUM(current_value), 0) AS total_value
-        FROM assets_with_sectors
-      `;
-      const totalAssetsResult = await pool.query(totalAssetsQuery, [ids, portfolioId]);
-      const totalAssetsValue = parseFloat(totalAssetsResult.rows[0].total_value);
-
-      // Query per calcolare i settori dividendo per il totale corretto
-      const sectorsQuery = `
-        WITH assets_with_sectors AS (
-          SELECT DISTINCT p.asset_id, p.current_value
-          FROM etf_sector_weights s
-          JOIN v_current_positions p ON s.asset_id = p.asset_id
-          WHERE s.asset_id = ANY($1) AND p.portfolio_id = $2
-        ),
-        total_assets_value AS (
-          SELECT COALESCE(SUM(current_value), 0) AS total_value
-          FROM assets_with_sectors
+      query = `
+        WITH asset_weights AS (
+          SELECT 
+            asset_id,
+            current_value / SUM(current_value) OVER() as asset_weight
+          FROM v_current_positions
+          WHERE portfolio_id = $2 AND asset_id = ANY($1)
         )
         SELECT
           s.sector_name,
-          SUM(s.weight_percent * p.current_value) / NULLIF((SELECT total_value FROM total_assets_value), 0) AS weighted_percent
+          SUM(aw.asset_weight * s.weight_percent) as real_weight
         FROM etf_sector_weights s
-        JOIN v_current_positions p ON s.asset_id = p.asset_id
-        CROSS JOIN total_assets_value
-        WHERE s.asset_id = ANY($1) AND p.portfolio_id = $2
-          AND s.sector_name NOT IN ('Altri', 'Other', 'Others', 'Altro', 'Miscellaneous', 'N/A')
+        JOIN asset_weights aw ON s.asset_id = aw.asset_id
+        WHERE s.sector_name NOT IN ('Altri', 'Other', 'Others', 'Altro', 'Miscellaneous', 'N/A')
         GROUP BY s.sector_name
-        ORDER BY weighted_percent DESC
+        ORDER BY real_weight DESC
         ${queryLimit ? `LIMIT ${queryLimit}` : ''}
       `;
+      params = [ids, portfolioId];
 
-      const sectorsResult = await pool.query(sectorsQuery, [ids, portfolioId]);
-      
-      // Converti da decimale a percentuale
-      sectors = sectorsResult.rows.map(row => ({
-        sector_name: row.sector_name,
-        weighted_percent: parseFloat((row.weighted_percent * 100).toFixed(2))
-      }));
-
-      // Calcola il totale reale includendo TUTTI i settori (anche quelli esclusi)
-      const allSectorsQuery = `
-        WITH assets_with_sectors AS (
-          SELECT DISTINCT p.asset_id, p.current_value
-          FROM etf_sector_weights s
-          JOIN v_current_positions p ON s.asset_id = p.asset_id
-          WHERE s.asset_id = ANY($1) AND p.portfolio_id = $2
-        ),
-        total_assets_value AS (
-          SELECT COALESCE(SUM(current_value), 0) AS total_value
-          FROM assets_with_sectors
+      allSectorsQuery = `
+        WITH asset_weights AS (
+          SELECT 
+            asset_id,
+            current_value / SUM(current_value) OVER() as asset_weight
+          FROM v_current_positions
+          WHERE portfolio_id = $2 AND asset_id = ANY($1)
         )
         SELECT
-          SUM(s.weight_percent * p.current_value) / NULLIF((SELECT total_value FROM total_assets_value), 0) AS total_percent
+          COALESCE(SUM(aw.asset_weight * s.weight_percent), 0) as total
         FROM etf_sector_weights s
-        JOIN v_current_positions p ON s.asset_id = p.asset_id
-        CROSS JOIN total_assets_value
-        WHERE s.asset_id = ANY($1) AND p.portfolio_id = $2
+        JOIN asset_weights aw ON s.asset_id = aw.asset_id
       `;
-      const allSectorsResult = await pool.query(allSectorsQuery, [ids, portfolioId]);
-      const totalReal = parseFloat(allSectorsResult.rows[0].total_percent || 0);
-
-      // Log per diagnosticare problemi (se totale > 1.0)
-      if (totalReal > 1.01) {
-        console.warn(`⚠️  Settori sommano a ${(totalReal * 100).toFixed(2)}% per asset ${ids.join(',')} nel portafoglio ${portfolioId}. Normalizzazione applicata.`);
-      }
-
-      // Converti da percentuale a decimale per calcolare "Altri"
-      const sectorsDecimal = sectors.map(s => ({
-        ...s,
-        weighted_percent: s.weighted_percent / 100
-      }));
-
-      // Calcola la somma delle percentuali mostrate
-      const totalShown = sectorsDecimal.reduce((sum, s) => sum + s.weighted_percent, 0);
-      
-      // "Altri" è la differenza tra il totale reale e la somma delle categorie mostrate
-      const othersPercent = Math.max(0, totalReal - totalShown);
-      
-      // Aggiungi "Altri" se > 0
-      if (othersPercent > 0.0001) {
-        sectors.push({
-          sector_name: 'Altri',
-          weighted_percent: parseFloat((othersPercent * 100).toFixed(2))
-        });
-      }
-
-      // Normalizza tutte le percentuali al 100% se il totale reale è diverso da 1.0
-      // Questo gestisce il caso in cui alcuni asset hanno settori che sommano a più del 100%
-      if (Math.abs(totalReal - 1.0) > 0.01 && totalReal > 0) {
-        const normalizationFactor = 1.0 / totalReal;
-        sectors.forEach(s => {
-          s.weighted_percent = parseFloat((s.weighted_percent * normalizationFactor).toFixed(2));
-        });
-      }
+      allParams = [ids, portfolioId];
     } else {
-      sectors = await calculateMultiAssetLookThrough(
-        ids,
-        null,
-        'etf_sector_weights',
-        'sector_name',
-        {
-          exclude: ['Altri', 'Other', 'Others', 'Altro', 'Miscellaneous', 'N/A'],
-          asPercentage: true,
-          limit: queryLimit,
-        }
-      );
+      query = `
+        SELECT
+          s.sector_name,
+          AVG(s.weight_percent) as real_weight
+        FROM etf_sector_weights s
+        WHERE s.asset_id = ANY($1)
+          AND s.sector_name NOT IN ('Altri', 'Other', 'Others', 'Altro', 'Miscellaneous', 'N/A')
+        GROUP BY s.sector_name
+        ORDER BY real_weight DESC
+        ${queryLimit ? `LIMIT ${queryLimit}` : ''}
+      `;
+      params = [ids];
+
+      allSectorsQuery = `
+        SELECT
+          COALESCE(AVG(total_per_asset), 0) as total
+        FROM (
+          SELECT asset_id, SUM(weight_percent) as total_per_asset
+          FROM etf_sector_weights
+          WHERE asset_id = ANY($1)
+          GROUP BY asset_id
+        ) t
+      `;
+      allParams = [ids];
     }
 
-    const stats = calculateStats(sectors);
+    const result = await pool.query(query, params);
+
+    const sectors = result.rows.map(row => ({
+      sector_name: row.sector_name,
+      weighted_percent: parseFloat((row.real_weight * 100).toFixed(2))
+    }));
+
+    const totalResult = await pool.query(allSectorsQuery, allParams);
+    const allSectorsTotal = parseFloat(totalResult.rows[0].total);
+
+    const shownTotal = sectors.reduce((sum, s) => sum + (s.weighted_percent / 100), 0);
+    const othersPercent = Math.max(0, (allSectorsTotal - shownTotal) * 100);
+
+    if (othersPercent > 0.01) {
+      sectors.push({
+        sector_name: 'Altri',
+        weighted_percent: parseFloat(othersPercent.toFixed(2))
+      });
+    }
 
     res.json({
       sectors,
-      stats,
       count: sectors.length,
-      totalPercent: portfolioId ? 100.0 : undefined, // Solo se portfolioId presente
+      totalPercent: parseFloat((allSectorsTotal * 100).toFixed(2))
     });
   } catch (err) {
     console.error('Error in getSectorsByMultipleAssets:', err);
@@ -374,17 +342,14 @@ async function saveManualSectors(req, res) {
     }
 
     await client.query('BEGIN');
-
-    // Cancella settori esistenti
     await client.query('DELETE FROM etf_sector_weights WHERE asset_id = $1', [assetId]);
 
-    // Inserisci nuovi settori
     let inserted = 0;
     for (const sector of sectors) {
       await client.query(
         `INSERT INTO etf_sector_weights (asset_id, sector_name, weight_percent)
          VALUES ($1, $2, $3)`,
-        [assetId, sector.name, sector.percent / 100] // Converti da percentuale a decimale
+        [assetId, sector.name, sector.percent / 100]
       );
       inserted++;
     }
@@ -413,7 +378,6 @@ async function saveManualSectors(req, res) {
 async function deleteSectorsByAsset(req, res) {
   try {
     const { assetId } = req.params;
-
     const result = await pool.query('DELETE FROM etf_sector_weights WHERE asset_id = $1', [assetId]);
 
     res.json({
@@ -431,7 +395,6 @@ async function deleteSectorsByAsset(req, res) {
 /**
  * GET /api/composition/sectors/detail
  * Recupera dettagli degli asset che contengono un specifico settore
- * Query params: portfolioId, sectorName
  */
 async function getSectorDetail(req, res) {
   try {

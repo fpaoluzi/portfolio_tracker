@@ -1,33 +1,16 @@
 // ============================================
-// GEOGRAPHIC ANALYSIS CONTROLLER
-// Gestisce l'analisi geografica (USA, Europa, Asia, etc.)
-// LOGICA CORRETTA: Peso reale = Peso_Asset × Peso_Regione
+// region ANALYSIS CONTROLLER
+// Gestisce l'analisi Regioniale (Technology, Healthcare, Financials, etc.)
+// LOGICA CORRETTA: Peso reale = Peso_Asset × Peso_regione
 // ============================================
 
 const pool = require('../../config/database');
 
-// Mapping per normalizzare nomi geografici in italiano
-const REGION_MAPPING = {
-  'United States': 'Stati Uniti', 'USA': 'Stati Uniti', 'US': 'Stati Uniti',
-  'United Kingdom': 'Regno Unito', 'UK': 'Regno Unito', 'Great Britain': 'Regno Unito',
-  'Japan': 'Giappone', 'France': 'Francia', 'Germany': 'Germania',
-  'Netherlands': 'Paesi Bassi', 'Olanda': 'Paesi Bassi', 'Paesi bassi': 'Paesi Bassi',
-  'Spain': 'Spagna', 'Italy': 'Italia', 'Switzerland': 'Svizzera',
-  'Belgium': 'Belgio', 'Austria': 'Austria', 'Sweden': 'Svezia',
-  'Denmark': 'Danimarca', 'Finland': 'Finlandia', 'Norway': 'Norvegia',
-  'Portugal': 'Portogallo', 'Ireland': 'Irlanda', 'Poland': 'Polonia',
-  'South Korea': 'Corea del Sud', 'Korea': 'Corea del Sud',
-  'China': 'Cina', 'Canada': 'Canada', 'Australia': 'Australia',
-  'Brazil': 'Brasile', 'India': 'India', 'Mexico': 'Messico',
-  'Russia': 'Russia', 'Hong Kong': 'Hong Kong', 'Singapore': 'Singapore',
-  'Taiwan': 'Taiwan'
-};
-
-function normalizeRegionName(name) {
-  return REGION_MAPPING[name] || name;
-}
-
-async function getGeographicByAsset(req, res) {
+/**
+ * GET /api/composition/regions/asset/:assetId
+ * Recupera la composizione Regioniale per un singolo asset
+ */
+async function getregionsByAsset(req, res) {
   try {
     const { assetId } = req.params;
     const { limit = 15 } = req.query;
@@ -37,7 +20,7 @@ async function getGeographicByAsset(req, res) {
       SELECT 
         region_name,
         weight_percent
-      FROM etf_geographic_weights
+      FROM etf_region_weights
       WHERE asset_id = $1
       ORDER BY weight_percent DESC
       ${queryLimit ? `LIMIT ${queryLimit}` : ''}
@@ -46,20 +29,20 @@ async function getGeographicByAsset(req, res) {
     const result = await pool.query(regionsQuery, [assetId]);
 
     const regions = result.rows.map(row => ({
-      region_name: normalizeRegionName(row.region_name),
+      region_name: row.region_name,
       weighted_percent: parseFloat((row.weight_percent * 100).toFixed(2))
     }));
 
-    const allRegionsQuery = `
+    const allregionsQuery = `
       SELECT COALESCE(SUM(weight_percent), 0) as total
-      FROM etf_geographic_weights
+      FROM etf_region_weights
       WHERE asset_id = $1
     `;
-    const totalResult = await pool.query(allRegionsQuery, [assetId]);
-    const allRegionsTotal = parseFloat(totalResult.rows[0].total);
+    const totalResult = await pool.query(allregionsQuery, [assetId]);
+    const allregionsTotal = parseFloat(totalResult.rows[0].total);
 
-    const shownTotal = regions.reduce((sum, r) => sum + (r.weighted_percent / 100), 0);
-    const othersPercent = Math.max(0, (allRegionsTotal - shownTotal) * 100);
+    const shownTotal = regions.reduce((sum, s) => sum + (s.weighted_percent / 100), 0);
+    const othersPercent = Math.max(0, (allregionsTotal - shownTotal) * 100);
 
     if (othersPercent > 0.01) {
       regions.push({
@@ -71,15 +54,19 @@ async function getGeographicByAsset(req, res) {
     res.json({
       regions,
       count: regions.length,
-      totalPercent: parseFloat((allRegionsTotal * 100).toFixed(2))
+      totalPercent: parseFloat((allregionsTotal * 100).toFixed(2))
     });
   } catch (err) {
-    console.error('Error in getGeographicByAsset:', err);
-    res.status(500).json({ error: 'Errore nel recupero composizione geografica' });
+    console.error('Error in getregionsByAsset:', err);
+    res.status(500).json({ error: 'Errore nel recupero Regioni' });
   }
 }
 
-async function getGeographicByPortfolio(req, res) {
+/**
+ * GET /api/composition/regions/portfolio/:portfolioId
+ * Recupera composizione Regioniale aggregata per un portafoglio
+ */
+async function getregionsByPortfolio(req, res) {
   try {
     const { portfolioId } = req.params;
     const { expand = 'false', limit = 15 } = req.query;
@@ -95,12 +82,12 @@ async function getGeographicByPortfolio(req, res) {
         WHERE portfolio_id = $1
       )
       SELECT
-        g.region_name,
-        SUM(aw.asset_weight * g.weight_percent) as real_weight
-      FROM etf_geographic_weights g
-      JOIN asset_weights aw ON g.asset_id = aw.asset_id
-      WHERE g.region_name NOT IN ('Altri', 'Other', 'Others', 'Altro', 'Rest of World', 'N/A')
-      GROUP BY g.region_name
+        s.region_name,
+        SUM(aw.asset_weight * s.weight_percent) as real_weight
+      FROM etf_region_weights s
+      JOIN asset_weights aw ON s.asset_id = aw.asset_id
+      WHERE s.region_name NOT IN ('Altri', 'Other', 'Others', 'Altro', 'Miscellaneous', 'N/A')
+      GROUP BY s.region_name
       ORDER BY real_weight DESC
       ${queryLimit ? `LIMIT ${queryLimit}` : ''}
     `;
@@ -108,11 +95,11 @@ async function getGeographicByPortfolio(req, res) {
     const result = await pool.query(query, [portfolioId]);
 
     const regions = result.rows.map(row => ({
-      region_name: normalizeRegionName(row.region_name),
+      region_name: row.region_name,
       weighted_percent: parseFloat((row.real_weight * 100).toFixed(2))
     }));
 
-    const allRegionsQuery = `
+    const allregionsQuery = `
       WITH asset_weights AS (
         SELECT 
           asset_id,
@@ -121,15 +108,15 @@ async function getGeographicByPortfolio(req, res) {
         WHERE portfolio_id = $1
       )
       SELECT
-        COALESCE(SUM(aw.asset_weight * g.weight_percent), 0) as total
-      FROM etf_geographic_weights g
-      JOIN asset_weights aw ON g.asset_id = aw.asset_id
+        COALESCE(SUM(aw.asset_weight * s.weight_percent), 0) as total
+      FROM etf_region_weights s
+      JOIN asset_weights aw ON s.asset_id = aw.asset_id
     `;
-    const totalResult = await pool.query(allRegionsQuery, [portfolioId]);
-    const allRegionsTotal = parseFloat(totalResult.rows[0].total);
+    const totalResult = await pool.query(allregionsQuery, [portfolioId]);
+    const allregionsTotal = parseFloat(totalResult.rows[0].total);
 
-    const shownTotal = regions.reduce((sum, r) => sum + (r.weighted_percent / 100), 0);
-    const othersPercent = Math.max(0, (allRegionsTotal - shownTotal) * 100);
+    const shownTotal = regions.reduce((sum, s) => sum + (s.weighted_percent / 100), 0);
+    const othersPercent = Math.max(0, (allregionsTotal - shownTotal) * 100);
 
     if (othersPercent > 0.01) {
       regions.push({
@@ -141,15 +128,19 @@ async function getGeographicByPortfolio(req, res) {
     res.json({
       regions,
       count: regions.length,
-      totalPercent: parseFloat((allRegionsTotal * 100).toFixed(2))
+      totalPercent: parseFloat((allregionsTotal * 100).toFixed(2))
     });
   } catch (err) {
-    console.error('Error in getGeographicByPortfolio:', err);
-    res.status(500).json({ error: 'Errore nel calcolo composizione geografica portafoglio' });
+    console.error('Error in getregionsByPortfolio:', err);
+    res.status(500).json({ error: 'Errore nel calcolo Regioni portafoglio' });
   }
 }
 
-async function getGeographicByMultiplePortfolios(req, res) {
+/**
+ * GET /api/composition/regions/portfolios/multiple
+ * Recupera composizione Regioniale aggregata per più portafogli
+ */
+async function getregionsByMultiplePortfolios(req, res) {
   try {
     const { portfolioIds, expand = 'false', limit = 15 } = req.query;
 
@@ -170,12 +161,12 @@ async function getGeographicByMultiplePortfolios(req, res) {
         WHERE portfolio_id = ANY($1)
       )
       SELECT
-        g.region_name,
-        SUM(aw.asset_weight * g.weight_percent) as real_weight
-      FROM etf_geographic_weights g
-      JOIN asset_weights aw ON g.asset_id = aw.asset_id
-      WHERE g.region_name NOT IN ('Altri', 'Other', 'Others', 'Altro', 'Rest of World', 'N/A')
-      GROUP BY g.region_name
+        s.region_name,
+        SUM(aw.asset_weight * s.weight_percent) as real_weight
+      FROM etf_region_weights s
+      JOIN asset_weights aw ON s.asset_id = aw.asset_id
+      WHERE s.region_name NOT IN ('Altri', 'Other', 'Others', 'Altro', 'Miscellaneous', 'N/A')
+      GROUP BY s.region_name
       ORDER BY real_weight DESC
       ${queryLimit ? `LIMIT ${queryLimit}` : ''}
     `;
@@ -183,11 +174,11 @@ async function getGeographicByMultiplePortfolios(req, res) {
     const result = await pool.query(query, [ids]);
 
     const regions = result.rows.map(row => ({
-      region_name: normalizeRegionName(row.region_name),
+      region_name: row.region_name,
       weighted_percent: parseFloat((row.real_weight * 100).toFixed(2))
     }));
 
-    const allRegionsQuery = `
+    const allregionsQuery = `
       WITH asset_weights AS (
         SELECT 
           asset_id,
@@ -196,15 +187,15 @@ async function getGeographicByMultiplePortfolios(req, res) {
         WHERE portfolio_id = ANY($1)
       )
       SELECT
-        COALESCE(SUM(aw.asset_weight * g.weight_percent), 0) as total
-      FROM etf_geographic_weights g
-      JOIN asset_weights aw ON g.asset_id = aw.asset_id
+        COALESCE(SUM(aw.asset_weight * s.weight_percent), 0) as total
+      FROM etf_region_weights s
+      JOIN asset_weights aw ON s.asset_id = aw.asset_id
     `;
-    const totalResult = await pool.query(allRegionsQuery, [ids]);
-    const allRegionsTotal = parseFloat(totalResult.rows[0].total);
+    const totalResult = await pool.query(allregionsQuery, [ids]);
+    const allregionsTotal = parseFloat(totalResult.rows[0].total);
 
-    const shownTotal = regions.reduce((sum, r) => sum + (r.weighted_percent / 100), 0);
-    const othersPercent = Math.max(0, (allRegionsTotal - shownTotal) * 100);
+    const shownTotal = regions.reduce((sum, s) => sum + (s.weighted_percent / 100), 0);
+    const othersPercent = Math.max(0, (allregionsTotal - shownTotal) * 100);
 
     if (othersPercent > 0.01) {
       regions.push({
@@ -216,15 +207,19 @@ async function getGeographicByMultiplePortfolios(req, res) {
     res.json({
       regions,
       count: regions.length,
-      totalPercent: parseFloat((allRegionsTotal * 100).toFixed(2))
+      totalPercent: parseFloat((allregionsTotal * 100).toFixed(2))
     });
   } catch (err) {
-    console.error('Error in getGeographicByMultiplePortfolios:', err);
-    res.status(500).json({ error: 'Errore nel calcolo composizione geografica multi-portafoglio' });
+    console.error('Error in getregionsByMultiplePortfolios:', err);
+    res.status(500).json({ error: 'Errore nel calcolo Regioni multi-portafoglio' });
   }
 }
 
-async function getGeographicByMultipleAssets(req, res) {
+/**
+ * GET /api/composition/regions/assets/multiple
+ * Recupera composizione Regioniale aggregata per più asset
+ */
+async function getregionsByMultipleAssets(req, res) {
   try {
     const { assetIds, portfolioId, expand = 'false', limit = 15 } = req.query;
 
@@ -236,7 +231,7 @@ async function getGeographicByMultipleAssets(req, res) {
     const shouldExpand = expand === 'true' || expand === true;
     const queryLimit = shouldExpand ? null : parseInt(limit, 10);
 
-    let query, params, allRegionsQuery, allParams;
+    let query, params, allregionsQuery, allParams;
 
     if (portfolioId) {
       query = `
@@ -248,18 +243,18 @@ async function getGeographicByMultipleAssets(req, res) {
           WHERE portfolio_id = $2 AND asset_id = ANY($1)
         )
         SELECT
-          g.region_name,
-          SUM(aw.asset_weight * g.weight_percent) as real_weight
-        FROM etf_geographic_weights g
-        JOIN asset_weights aw ON g.asset_id = aw.asset_id
-        WHERE g.region_name NOT IN ('Altri', 'Other', 'Others', 'Altro', 'Rest of World', 'N/A')
-        GROUP BY g.region_name
+          s.region_name,
+          SUM(aw.asset_weight * s.weight_percent) as real_weight
+        FROM etf_region_weights s
+        JOIN asset_weights aw ON s.asset_id = aw.asset_id
+        WHERE s.region_name NOT IN ('Altri', 'Other', 'Others', 'Altro', 'Miscellaneous', 'N/A')
+        GROUP BY s.region_name
         ORDER BY real_weight DESC
         ${queryLimit ? `LIMIT ${queryLimit}` : ''}
       `;
       params = [ids, portfolioId];
 
-      allRegionsQuery = `
+      allregionsQuery = `
         WITH asset_weights AS (
           SELECT 
             asset_id,
@@ -268,31 +263,31 @@ async function getGeographicByMultipleAssets(req, res) {
           WHERE portfolio_id = $2 AND asset_id = ANY($1)
         )
         SELECT
-          COALESCE(SUM(aw.asset_weight * g.weight_percent), 0) as total
-        FROM etf_geographic_weights g
-        JOIN asset_weights aw ON g.asset_id = aw.asset_id
+          COALESCE(SUM(aw.asset_weight * s.weight_percent), 0) as total
+        FROM etf_region_weights s
+        JOIN asset_weights aw ON s.asset_id = aw.asset_id
       `;
       allParams = [ids, portfolioId];
     } else {
       query = `
         SELECT
-          g.region_name,
-          AVG(g.weight_percent) as real_weight
-        FROM etf_geographic_weights g
-        WHERE g.asset_id = ANY($1)
-          AND g.region_name NOT IN ('Altri', 'Other', 'Others', 'Altro', 'Rest of World', 'N/A')
-        GROUP BY g.region_name
+          s.region_name,
+          AVG(s.weight_percent) as real_weight
+        FROM etf_region_weights s
+        WHERE s.asset_id = ANY($1)
+          AND s.region_name NOT IN ('Altri', 'Other', 'Others', 'Altro', 'Miscellaneous', 'N/A')
+        GROUP BY s.region_name
         ORDER BY real_weight DESC
         ${queryLimit ? `LIMIT ${queryLimit}` : ''}
       `;
       params = [ids];
 
-      allRegionsQuery = `
+      allregionsQuery = `
         SELECT
           COALESCE(AVG(total_per_asset), 0) as total
         FROM (
           SELECT asset_id, SUM(weight_percent) as total_per_asset
-          FROM etf_geographic_weights
+          FROM etf_region_weights
           WHERE asset_id = ANY($1)
           GROUP BY asset_id
         ) t
@@ -303,15 +298,15 @@ async function getGeographicByMultipleAssets(req, res) {
     const result = await pool.query(query, params);
 
     const regions = result.rows.map(row => ({
-      region_name: normalizeRegionName(row.region_name),
+      region_name: row.region_name,
       weighted_percent: parseFloat((row.real_weight * 100).toFixed(2))
     }));
 
-    const totalResult = await pool.query(allRegionsQuery, allParams);
-    const allRegionsTotal = parseFloat(totalResult.rows[0].total);
+    const totalResult = await pool.query(allregionsQuery, allParams);
+    const allregionsTotal = parseFloat(totalResult.rows[0].total);
 
-    const shownTotal = regions.reduce((sum, r) => sum + (r.weighted_percent / 100), 0);
-    const othersPercent = Math.max(0, (allRegionsTotal - shownTotal) * 100);
+    const shownTotal = regions.reduce((sum, s) => sum + (s.weighted_percent / 100), 0);
+    const othersPercent = Math.max(0, (allregionsTotal - shownTotal) * 100);
 
     if (othersPercent > 0.01) {
       regions.push({
@@ -323,15 +318,19 @@ async function getGeographicByMultipleAssets(req, res) {
     res.json({
       regions,
       count: regions.length,
-      totalPercent: parseFloat((allRegionsTotal * 100).toFixed(2))
+      totalPercent: parseFloat((allregionsTotal * 100).toFixed(2))
     });
   } catch (err) {
-    console.error('Error in getGeographicByMultipleAssets:', err);
-    res.status(500).json({ error: 'Errore nel calcolo composizione geografica multi-asset' });
+    console.error('Error in getregionsByMultipleAssets:', err);
+    res.status(500).json({ error: 'Errore nel calcolo Regioni multi-asset' });
   }
 }
 
-async function saveManualGeographic(req, res) {
+/**
+ * POST /api/composition/regions/asset/:assetId
+ * Salva manualmente la composizione Regioniale per un asset
+ */
+async function saveManualregions(req, res) {
   const client = await pool.connect();
 
   try {
@@ -343,12 +342,12 @@ async function saveManualGeographic(req, res) {
     }
 
     await client.query('BEGIN');
-    await client.query('DELETE FROM etf_geographic_weights WHERE asset_id = $1', [assetId]);
+    await client.query('DELETE FROM etf_region_weights WHERE asset_id = $1', [assetId]);
 
     let inserted = 0;
     for (const region of regions) {
       await client.query(
-        `INSERT INTO etf_geographic_weights (asset_id, region_name, weight_percent)
+        `INSERT INTO etf_region_weights (asset_id, region_name, weight_percent)
          VALUES ($1, $2, $3)`,
         [assetId, region.name, region.percent / 100]
       );
@@ -359,37 +358,45 @@ async function saveManualGeographic(req, res) {
 
     res.json({
       success: true,
-      message: `${inserted} regioni salvate con successo`,
+      message: `${inserted} Regioni salvati con successo`,
       count: inserted
     });
 
   } catch (err) {
     await client.query('ROLLBACK');
-    console.error('Error in saveManualGeographic:', err);
-    res.status(500).json({ error: 'Errore nel salvataggio composizione geografica', details: err.message });
+    console.error('Error in saveManualregions:', err);
+    res.status(500).json({ error: 'Errore nel salvataggio Regioni', details: err.message });
   } finally {
     client.release();
   }
 }
 
-async function deleteGeographicByAsset(req, res) {
+/**
+ * DELETE /api/composition/regions/asset/:assetId
+ * Cancella i Regioni per un asset
+ */
+async function deleteregionsByAsset(req, res) {
   try {
     const { assetId } = req.params;
-    const result = await pool.query('DELETE FROM etf_geographic_weights WHERE asset_id = $1', [assetId]);
+    const result = await pool.query('DELETE FROM etf_region_weights WHERE asset_id = $1', [assetId]);
 
     res.json({
       success: true,
-      message: `${result.rowCount} regioni cancellate`,
+      message: `${result.rowCount} Regioni cancellati`,
       deletedCount: result.rowCount
     });
 
   } catch (err) {
-    console.error('Error in deleteGeographicByAsset:', err);
-    res.status(500).json({ error: 'Errore nella cancellazione composizione geografica' });
+    console.error('Error in deleteregionsByAsset:', err);
+    res.status(500).json({ error: 'Errore nella cancellazione Regioni' });
   }
 }
 
-async function getRegionDetail(req, res) {
+/**
+ * GET /api/composition/regions/detail
+ * Recupera dettagli degli asset che contengono un specifico regione
+ */
+async function getregionDetail(req, res) {
   try {
     const { portfolioId, regionName } = req.query;
 
@@ -403,14 +410,14 @@ async function getRegionDetail(req, res) {
         a.ticker,
         a.name AS asset_name,
         p.current_value,
-        g.weight_percent,
-        (g.weight_percent * p.current_value) AS region_value,
-        (g.weight_percent * p.current_value) / NULLIF(SUM(g.weight_percent * p.current_value) OVER(), 0) AS contribution_percent
-      FROM etf_geographic_weights g
-      JOIN v_current_positions p ON g.asset_id = p.asset_id
-      JOIN assets a ON g.asset_id = a.asset_id
+        s.weight_percent,
+        (s.weight_percent * p.current_value) AS region_value,
+        (s.weight_percent * p.current_value) / NULLIF(SUM(s.weight_percent * p.current_value) OVER(), 0) AS contribution_percent
+      FROM etf_region_weights s
+      JOIN v_current_positions p ON s.asset_id = p.asset_id
+      JOIN assets a ON s.asset_id = a.asset_id
       WHERE p.portfolio_id = $1
-        AND g.region_name = $2
+        AND s.region_name = $2
       ORDER BY region_value DESC
     `;
 
@@ -436,17 +443,17 @@ async function getRegionDetail(req, res) {
     });
 
   } catch (err) {
-    console.error('Error in getRegionDetail:', err);
+    console.error('Error in getregionDetail:', err);
     res.status(500).json({ error: 'Errore nel recupero dettagli regione' });
   }
 }
 
 module.exports = {
-  getGeographicByAsset,
-  getGeographicByPortfolio,
-  getGeographicByMultiplePortfolios,
-  getGeographicByMultipleAssets,
-  saveManualGeographic,
-  deleteGeographicByAsset,
-  getRegionDetail,
+  getregionsByAsset,
+  getregionsByPortfolio,
+  getregionsByMultiplePortfolios,
+  getregionsByMultipleAssets,
+  saveManualregions,
+  deleteregionsByAsset,
+  getregionDetail,
 };
