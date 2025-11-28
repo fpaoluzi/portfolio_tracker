@@ -37,6 +37,7 @@ import { TransactionFormModal } from '@/components/features/transaction/Transact
 import { ImportExcelModal } from '@/components/features/transaction/ImportExcelModal';
 import { MonthlyPerformanceChart } from '@/components/features/performance/MonthlyPerformanceChart';
 import { PortfolioAnalysis } from '@/components/features/analysis/PortfolioAnalysis';
+import { RebalancingDashboard } from '@/components/features/rebalancing';
 import { portfoliosApi, assetsApi, transactionsApi, getPortfolioRiskStats, RiskStats } from '@/lib/api';
 import { usePortfolio } from '@/lib/hooks/usePortfolio';
 import { formatCurrency, formatPercent, formatDate } from '@/lib/utils/format';
@@ -194,7 +195,7 @@ function HomeContent() {
   const filterAndSortPositions = () => {
     let filtered = positions.filter(pos =>
       (pos.asset_name.toLowerCase().includes(positionFilter.toLowerCase()) ||
-       pos.isin.toLowerCase().includes(positionFilter.toLowerCase())) &&
+        pos.isin.toLowerCase().includes(positionFilter.toLowerCase())) &&
       (!positionTypeFilter || pos.asset_type === positionTypeFilter)
     );
 
@@ -213,8 +214,8 @@ function HomeContent() {
   const filterAndSortTransactions = () => {
     let filtered = transactions.filter(tx =>
       (tx.asset_name?.toLowerCase().includes(transactionFilter.toLowerCase()) ||
-      tx.isin?.toLowerCase().includes(transactionFilter.toLowerCase()) ||
-      tx.transaction_type.toLowerCase().includes(transactionFilter.toLowerCase())) &&
+        tx.isin?.toLowerCase().includes(transactionFilter.toLowerCase()) ||
+        tx.transaction_type.toLowerCase().includes(transactionFilter.toLowerCase())) &&
       (!transactionTypeFilter || tx.transaction_type === transactionTypeFilter)
     );
 
@@ -355,11 +356,10 @@ function HomeContent() {
                   <button
                     key={p.portfolio_id}
                     onClick={() => setSelectedPortfolio(p)}
-                    className={`px-4 py-2 rounded-lg whitespace-nowrap transition-all ${
-                      selectedPortfolio?.portfolio_id === p.portfolio_id
-                        ? 'bg-blue-500 text-white'
-                        : 'bg-white/10 text-blue-200 hover:bg-white/20'
-                    }`}
+                    className={`px-4 py-2 rounded-lg whitespace-nowrap transition-all ${selectedPortfolio?.portfolio_id === p.portfolio_id
+                      ? 'bg-blue-500 text-white'
+                      : 'bg-white/10 text-blue-200 hover:bg-white/20'
+                      }`}
                   >
                     {p.name}
                   </button>
@@ -398,23 +398,20 @@ function HomeContent() {
             </div>
 
             <div
-              className={`bg-gradient-to-br ${
-                Number(performance.total_gain_loss) >= 0
-                  ? 'from-green-500/20 to-green-600/20'
-                  : 'from-red-500/20 to-red-600/20'
-              } backdrop-blur-lg rounded-xl p-6 border ${
-                Number(performance.total_gain_loss) >= 0
+              className={`bg-gradient-to-br ${Number(performance.total_gain_loss) >= 0
+                ? 'from-green-500/20 to-green-600/20'
+                : 'from-red-500/20 to-red-600/20'
+                } backdrop-blur-lg rounded-xl p-6 border ${Number(performance.total_gain_loss) >= 0
                   ? 'border-green-400/30'
                   : 'border-red-400/30'
-              }`}
+                }`}
             >
               <div className="flex items-center justify-between mb-2">
                 <span
-                  className={`${
-                    Number(performance.total_gain_loss) >= 0
-                      ? 'text-green-200'
-                      : 'text-red-200'
-                  } text-sm`}
+                  className={`${Number(performance.total_gain_loss) >= 0
+                    ? 'text-green-200'
+                    : 'text-red-200'
+                    } text-sm`}
                 >
                   G/P
                 </span>
@@ -430,32 +427,28 @@ function HomeContent() {
             </div>
 
             <div
-              className={`bg-gradient-to-br ${
-                Number(performance.total_gain_loss_pct) >= 0
-                  ? 'from-green-500/20 to-green-600/20'
-                  : 'from-red-500/20 to-red-600/20'
-              } backdrop-blur-lg rounded-xl p-6 border ${
-                Number(performance.total_gain_loss_pct) >= 0
+              className={`bg-gradient-to-br ${Number(performance.total_gain_loss_pct) >= 0
+                ? 'from-green-500/20 to-green-600/20'
+                : 'from-red-500/20 to-red-600/20'
+                } backdrop-blur-lg rounded-xl p-6 border ${Number(performance.total_gain_loss_pct) >= 0
                   ? 'border-green-400/30'
                   : 'border-red-400/30'
-              }`}
+                }`}
             >
               <div className="flex items-center justify-between mb-2">
                 <span
-                  className={`${
-                    Number(performance.total_gain_loss_pct) >= 0
-                      ? 'text-green-200'
-                      : 'text-red-200'
-                  } text-sm`}
+                  className={`${Number(performance.total_gain_loss_pct) >= 0
+                    ? 'text-green-200'
+                    : 'text-red-200'
+                    } text-sm`}
                 >
                   Performance
                 </span>
                 <Percent
-                  className={`w-5 h-5 ${
-                    Number(performance.total_gain_loss_pct) >= 0
-                      ? 'text-green-400'
-                      : 'text-red-400'
-                  }`}
+                  className={`w-5 h-5 ${Number(performance.total_gain_loss_pct) >= 0
+                    ? 'text-green-400'
+                    : 'text-red-400'
+                    }`}
                 />
               </div>
               <div className="text-2xl font-bold text-white">
@@ -467,21 +460,22 @@ function HomeContent() {
 
         {/* Navigation Tabs */}
         <div className="bg-white/10 backdrop-blur-lg rounded-xl p-2 mb-6 border border-white/20 flex gap-2 overflow-x-auto">
-          {['overview', 'positions', 'transactions', 'assets', 'analysis'].map((tab) => (
+          {['overview', 'positions', 'transactions', 'assets', 'analysis', 'rebalancing'].map((tab) => (
             <button
               key={tab}
               onClick={() => setActiveTab(tab)}
-              className={`px-6 py-2 rounded-lg transition-all whitespace-nowrap ${
-                activeTab === tab
-                  ? 'bg-blue-500 text-white shadow-lg'
-                  : 'text-blue-200 hover:bg-white/10'
-              }`}
+              className={`px-6 py-2 rounded-lg transition-all whitespace-nowrap ${activeTab === tab
+                ? 'bg-blue-500 text-white shadow-lg'
+                : 'text-blue-200 hover:bg-white/10'
+                }`}
             >
               {tab === 'overview' && 'Panoramica'}
               {tab === 'positions' && 'Posizioni'}
               {tab === 'transactions' && 'Transazioni'}
               {tab === 'assets' && 'Asset'}
-              {tab === 'analysis' && 'Analisi Composizione'}
+              {tab === 'assets' && 'Asset'}
+              {tab === 'analysis' && 'Analisi Portafoglio'}
+              {tab === 'rebalancing' && 'Ribilanciamento'}
             </button>
           ))}
         </div>
@@ -584,7 +578,7 @@ function HomeContent() {
                     Statistiche di Rischio
                   </h2>
                   <div className="space-y-4">
-                    <div 
+                    <div
                       className="bg-white/5 rounded-lg p-4 border border-white/20 cursor-pointer hover:bg-white/10 transition-colors"
                       onClick={() => {
                         if (riskStats.details && riskStats.details.length > 0) {
@@ -600,7 +594,7 @@ function HomeContent() {
                         {riskStats.isr !== null ? riskStats.isr.toFixed(2) : 'N/A'}
                       </div>
                     </div>
-                    <div 
+                    <div
                       className="bg-white/5 rounded-lg p-4 border border-white/20 cursor-pointer hover:bg-white/10 transition-colors"
                       onClick={() => {
                         if (riskStats.details && riskStats.details.length > 0) {
@@ -616,7 +610,7 @@ function HomeContent() {
                         {riskStats.standard_deviation !== null ? `${riskStats.standard_deviation.toFixed(2)}%` : 'N/A'}
                       </div>
                     </div>
-                    <div 
+                    <div
                       className="bg-white/5 rounded-lg p-4 border border-white/20 cursor-pointer hover:bg-white/10 transition-colors"
                       onClick={() => {
                         if (riskStats.details && riskStats.details.length > 0) {
@@ -825,18 +819,16 @@ function HomeContent() {
                         {pos.ownership_pct ? formatPercent(pos.ownership_pct) : '-'}
                       </td>
                       <td
-                        className={`px-6 py-4 text-right font-medium ${
-                          Number(pos.gain_loss) >= 0 ? 'text-green-400' : 'text-red-400'
-                        }`}
+                        className={`px-6 py-4 text-right font-medium ${Number(pos.gain_loss) >= 0 ? 'text-green-400' : 'text-red-400'
+                          }`}
                       >
                         {formatCurrency(pos.gain_loss)}
                       </td>
                       <td
-                        className={`px-6 py-4 text-right font-bold ${
-                          Number(pos.gain_loss_pct) >= 0
-                            ? 'text-green-400'
-                            : 'text-red-400'
-                        }`}
+                        className={`px-6 py-4 text-right font-bold ${Number(pos.gain_loss_pct) >= 0
+                          ? 'text-green-400'
+                          : 'text-red-400'
+                          }`}
                       >
                         {formatPercent(pos.gain_loss_pct)}
                       </td>
@@ -976,11 +968,10 @@ function HomeContent() {
                       </td>
                       <td className="px-6 py-4">
                         <span
-                          className={`px-3 py-1 rounded-full text-xs font-medium ${
-                            tx.transaction_type === 'BUY'
-                              ? 'bg-green-500/20 text-green-300'
-                              : 'bg-red-500/20 text-red-300'
-                          }`}
+                          className={`px-3 py-1 rounded-full text-xs font-medium ${tx.transaction_type === 'BUY'
+                            ? 'bg-green-500/20 text-green-300'
+                            : 'bg-red-500/20 text-red-300'
+                            }`}
                         >
                           {tx.transaction_type}
                         </span>
@@ -1061,6 +1052,10 @@ function HomeContent() {
             }))}
             selectedPortfolioId={selectedPortfolio?.portfolio_id || null}
           />
+        )}
+
+        {activeTab === 'rebalancing' && selectedPortfolio && (
+          <RebalancingDashboard portfolioId={selectedPortfolio.portfolio_id} />
         )}
 
         {/* MODALS */}

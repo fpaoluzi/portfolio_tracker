@@ -8,6 +8,7 @@ const portfolioRoutes = require('./portfolioRoutes');
 const assetRoutes = require('./assetRoutes');
 const transactionRoutes = require('./transactionRoutes');
 const targetAllocationRoutes = require('./targetAllocationRoutes');
+const rebalancingRoutes = require('./rebalancingRoutes');
 const priceUpdateRoutes = require('./priceUpdateRoutes');
 const importRoutes = require('./importRoutes');
 const performanceRoutes = require('./performanceRoutes');
@@ -40,6 +41,7 @@ router.use('/portfolios', portfolioRoutes);
 router.use('/assets', assetRoutes);
 router.use('/transactions', transactionRoutes);
 router.use('/target-allocations', targetAllocationRoutes);
+router.use('/rebalancing', rebalancingRoutes); // Rebalancing and allocation simulation routes
 router.use('/portfolios', priceUpdateRoutes); // Price updates routes
 router.use('/import', importRoutes);
 router.use('/portfolios', performanceRoutes); // Performance routes

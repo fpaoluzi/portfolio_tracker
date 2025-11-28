@@ -1,5 +1,5 @@
 import { apiClient } from './client';
-import type { Position, Performance, Allocation, Snapshot, TargetAllocation, TargetFormData } from '@/types';
+import type { Position, Performance, Allocation, Snapshot } from '@/types';
 
 export const analyticsApi = {
   getPositions: (portfolioId: string) =>
@@ -13,13 +13,4 @@ export const analyticsApi = {
 
   getSnapshots: (portfolioId: string, days = 365) =>
     apiClient.get<Snapshot[]>(`/portfolios/${portfolioId}/snapshots?days=${days}`),
-
-  getTargetAllocation: (portfolioId: string) =>
-    apiClient.get<TargetAllocation>(`/target-allocations/${portfolioId}`),
-
-  createTargetAllocation: (data: TargetFormData & { portfolio_id: string; allocation_name: string }) =>
-    apiClient.post<TargetAllocation>('/target-allocations', data),
-
-  updateTargetAllocation: (id: string, data: TargetFormData & { allocation_name: string }) =>
-    apiClient.put<TargetAllocation>(`/target-allocations/${id}`, data),
 };

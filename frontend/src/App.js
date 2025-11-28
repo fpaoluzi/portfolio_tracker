@@ -33,36 +33,26 @@ const PortfolioApp = () => {
   const [allocation, setAllocation] = useState([]);
   const [snapshots, setSnapshots] = useState([]);
   const [geoAllocation, setGeoAllocation] = useState([]);
-  const [targetAllocation, setTargetAllocation] = useState(null);
-  
+
+
   const [activeTab, setActiveTab] = useState('overview');
   const [showModal, setShowModal] = useState(null);
   const [loading, setLoading] = useState(false);
   const [editingItem, setEditingItem] = useState(null);
 
-  // Nuovo stato per simulazione liquidità
-  const [newCapital, setNewCapital] = useState(0);
-  const [allocationMode, setAllocationMode] = useState('target'); // 'target' o 'manual'
-  const [manualAllocation, setManualAllocation] = useState({});
-  const [simulationResult, setSimulationResult] = useState(null);
+
 
   // Form states
   const [portfolioForm, setPortfolioForm] = useState({ name: '', broker: '', currency: 'EUR', notes: '' });
-  const [assetForm, setAssetForm] = useState({ 
-    isin: '', name: '', ticker: '', asset_type: 'Azionario', 
-    sector: '', country: '', region: '', currency: 'EUR', ter: 0 
+  const [assetForm, setAssetForm] = useState({
+    isin: '', name: '', ticker: '', asset_type: 'Azionario',
+    sector: '', country: '', region: '', currency: 'EUR', ter: 0
   });
   const [transactionForm, setTransactionForm] = useState({
     asset_id: '', transaction_type: 'BUY', transaction_date: new Date().toISOString().split('T')[0],
     quantity: 0, price_per_share: 0, commission: 0, fees: 0, notes: ''
   });
-  const [targetForm, setTargetForm] = useState({
-    target_azionario: 65,
-    target_obbligazionario: 15,
-    target_monetario: 8,
-    target_oro: 12,
-    target_crypto: 0
-  });
+
 
   // Carica dati iniziali
   useEffect(() => {
@@ -106,13 +96,12 @@ const PortfolioApp = () => {
   const loadPortfolioData = async (portfolioId) => {
     setLoading(true);
     try {
-      const [posRes, transRes, perfRes, allocRes, snapRes, targetRes] = await Promise.all([
+      const [posRes, transRes, perfRes, allocRes, snapRes] = await Promise.all([
         fetch(`${API_URL}/portfolios/${portfolioId}/positions`),
         fetch(`${API_URL}/portfolios/${portfolioId}/transactions?limit=100`),
         fetch(`${API_URL}/portfolios/${portfolioId}/performance`),
         fetch(`${API_URL}/portfolios/${portfolioId}/allocation`),
-        fetch(`${API_URL}/portfolios/${portfolioId}/snapshots?days=365`),
-        fetch(`${API_URL}/target-allocations/${portfolioId}`)
+        fetch(`${API_URL}/portfolios/${portfolioId}/snapshots?days=365`)
       ]);
 
       const posData = await posRes.json();
@@ -121,21 +110,6 @@ const PortfolioApp = () => {
       setPerformance(await perfRes.json());
       setAllocation(await allocRes.json());
       setSnapshots(await snapRes.json());
-      
-      // Carica target allocation
-      if (targetRes.ok) {
-        const targetData = await targetRes.json();
-        setTargetAllocation(targetData);
-        if (targetData) {
-          setTargetForm({
-            target_azionario: targetData.target_azionario || 0,
-            target_obbligazionario: targetData.target_obbligazionario || 0,
-            target_monetario: targetData.target_monetario || 0,
-            target_oro: targetData.target_oro || 0,
-            target_crypto: targetData.target_crypto || 0
-          });
-        }
-      }
 
       // Calcola distribuzione geografica
       calculateGeoAllocation(posData);
@@ -196,9 +170,9 @@ const PortfolioApp = () => {
       if (response.ok) {
         await loadAssets();
         setShowModal(null);
-        setAssetForm({ 
-          isin: '', name: '', ticker: '', asset_type: 'Azionario', 
-          sector: '', country: '', region: '', currency: 'EUR', ter: 0 
+        setAssetForm({
+          isin: '', name: '', ticker: '', asset_type: 'Azionario',
+          sector: '', country: '', region: '', currency: 'EUR', ter: 0
         });
       }
     } catch (err) {
@@ -255,7 +229,7 @@ const PortfolioApp = () => {
       performance,
       allocation
     };
-    
+
     // In produzione usare libreria come xlsx
     const jsonStr = JSON.stringify(data, null, 2);
     const blob = new Blob([jsonStr], { type: 'application/json' });
@@ -266,117 +240,7 @@ const PortfolioApp = () => {
     a.click();
   };
 
-  const saveTargetAllocation = async (e) => {
-    e.preventDefault();
-    if (!selectedPortfolio) return;
 
-    // Verifica che la somma sia 100
-    const sum = Object.values(targetForm).reduce((a, b) => a + b, 0);
-    if (Math.abs(sum - 100) > 0.01) {
-      alert('La somma delle percentuali deve essere 100%');
-      return;
-    }
-
-    try {
-      const method = targetAllocation ? 'PUT' : 'POST';
-      const url = targetAllocation 
-        ? `${API_URL}/target-allocations/${targetAllocation.target_id}`
-        : `${API_URL}/target-allocations`;
-
-      const response = await fetch(url, {
-        method,
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          portfolio_id: selectedPortfolio.portfolio_id,
-          allocation_name: 'Target Standard',
-          ...targetForm
-        })
-      });
-
-      if (response.ok) {
-        await loadPortfolioData(selectedPortfolio.portfolio_id);
-        setShowModal(null);
-      }
-    } catch (err) {
-      console.error('Errore salvataggio target:', err);
-    }
-  };
-
-  const simulateAllocation = () => {
-    if (!performance || newCapital <= 0) return;
-
-    const currentTotal = parseFloat(performance.current_value || 0);
-    const newTotal = currentTotal + newCapital;
-
-    if (allocationMode === 'target') {
-      // Allocazione basata su target
-      const suggestions = {};
-      const currentAlloc = {};
-
-      // Calcola allocazione corrente
-      allocation.forEach(item => {
-        currentAlloc[item.asset_type] = parseFloat(item.total_value || 0);
-      });
-
-      // Calcola quanto investire per tipo per raggiungere i target
-      Object.keys(targetForm).forEach(key => {
-        const assetType = key.replace('target_', '').charAt(0).toUpperCase() + key.replace('target_', '').slice(1);
-        const targetPct = targetForm[key] / 100;
-        const targetValue = newTotal * targetPct;
-        const currentValue = currentAlloc[assetType] || 0;
-        const toInvest = targetValue - currentValue;
-
-        suggestions[assetType] = {
-          current: currentValue,
-          target: targetValue,
-          toInvest: Math.max(0, toInvest),
-          currentPct: (currentValue / currentTotal * 100),
-          targetPct: targetForm[key],
-          newPct: (targetValue / newTotal * 100)
-        };
-      });
-
-      setSimulationResult({
-        mode: 'target',
-        currentTotal,
-        newTotal,
-        newCapital,
-        suggestions
-      });
-    } else {
-      // Allocazione manuale
-      const suggestions = {};
-      let totalAllocated = 0;
-
-      Object.entries(manualAllocation).forEach(([assetType, amount]) => {
-        const amt = parseFloat(amount || 0);
-        totalAllocated += amt;
-
-        const currentValue = allocation.find(a => a.asset_type === assetType)?.total_value || 0;
-        const newValue = parseFloat(currentValue) + amt;
-
-        suggestions[assetType] = {
-          current: parseFloat(currentValue),
-          toInvest: amt,
-          newValue: newValue,
-          currentPct: (parseFloat(currentValue) / currentTotal * 100),
-          newPct: (newValue / newTotal * 100)
-        };
-      });
-
-      setSimulationResult({
-        mode: 'manual',
-        currentTotal,
-        newTotal,
-        newCapital,
-        totalAllocated,
-        remaining: newCapital - totalAllocated,
-        suggestions
-      });
-    }
-
-    setShowModal('simulation-result');
-  };
 
   // ============================================
   // UTILITY FUNCTIONS
@@ -399,7 +263,7 @@ const PortfolioApp = () => {
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-900 via-blue-900 to-slate-900 p-4">
       <div className="max-w-7xl mx-auto">
-        
+
         {/* Header */}
         <div className="bg-white/10 backdrop-blur-lg rounded-2xl p-6 mb-6 border border-white/20 shadow-2xl">
           <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
@@ -408,28 +272,28 @@ const PortfolioApp = () => {
               <p className="text-blue-200">Gestione completa con database PostgreSQL</p>
             </div>
             <div className="flex gap-3 flex-wrap">
-              <button 
+              <button
                 onClick={() => setShowModal('portfolio')}
                 className="px-4 py-2 bg-green-500 hover:bg-green-600 text-white rounded-lg flex items-center gap-2 transition-all"
               >
                 <Plus className="w-4 h-4" />
                 Nuovo Portafoglio
               </button>
-              <button 
+              <button
                 onClick={() => setShowModal('asset')}
                 className="px-4 py-2 bg-purple-500 hover:bg-purple-600 text-white rounded-lg flex items-center gap-2 transition-all"
               >
                 <Plus className="w-4 h-4" />
                 Nuovo Asset
               </button>
-              <button 
+              <button
                 onClick={exportToExcel}
                 className="px-4 py-2 bg-blue-500 hover:bg-blue-600 text-white rounded-lg flex items-center gap-2 transition-all"
               >
                 <Download className="w-4 h-4" />
                 Export
               </button>
-              <button 
+              <button
                 onClick={updatePrices}
                 disabled={loading}
                 className="px-4 py-2 bg-orange-500 hover:bg-orange-600 text-white rounded-lg flex items-center gap-2 transition-all disabled:opacity-50"
@@ -446,11 +310,10 @@ const PortfolioApp = () => {
                 <button
                   key={p.portfolio_id}
                   onClick={() => setSelectedPortfolio(p)}
-                  className={`px-4 py-2 rounded-lg whitespace-nowrap transition-all ${
-                    selectedPortfolio?.portfolio_id === p.portfolio_id
-                      ? 'bg-blue-500 text-white'
-                      : 'bg-white/10 text-blue-200 hover:bg-white/20'
-                  }`}
+                  className={`px-4 py-2 rounded-lg whitespace-nowrap transition-all ${selectedPortfolio?.portfolio_id === p.portfolio_id
+                    ? 'bg-blue-500 text-white'
+                    : 'bg-white/10 text-blue-200 hover:bg-white/20'
+                    }`}
                 >
                   {p.name}
                 </button>
@@ -498,22 +361,19 @@ const PortfolioApp = () => {
 
         {/* Navigation Tabs */}
         <div className="bg-white/10 backdrop-blur-lg rounded-xl p-2 mb-6 border border-white/20 flex gap-2 overflow-x-auto">
-          {['overview', 'positions', 'transactions', 'allocation', 'geography', 'rebalance'].map(tab => (
+          {['overview', 'positions', 'transactions', 'geography'].map(tab => (
             <button
               key={tab}
               onClick={() => setActiveTab(tab)}
-              className={`px-6 py-2 rounded-lg transition-all whitespace-nowrap ${
-                activeTab === tab 
-                  ? 'bg-blue-500 text-white shadow-lg' 
-                  : 'text-blue-200 hover:bg-white/10'
-              }`}
+              className={`px-6 py-2 rounded-lg transition-all whitespace-nowrap ${activeTab === tab
+                ? 'bg-blue-500 text-white shadow-lg'
+                : 'text-blue-200 hover:bg-white/10'
+                }`}
             >
               {tab === 'overview' && 'Panoramica'}
               {tab === 'positions' && 'Posizioni'}
               {tab === 'transactions' && 'Transazioni'}
-              {tab === 'allocation' && 'Allocazione'}
               {tab === 'geography' && 'Geografia'}
-              {tab === 'rebalance' && 'Ribilanciamento'}
             </button>
           ))}
         </div>
@@ -527,8 +387,8 @@ const PortfolioApp = () => {
                 <LineChart data={snapshots.slice().reverse()}>
                   <CartesianGrid strokeDasharray="3 3" stroke="#ffffff20" />
                   <XAxis dataKey="snapshot_date" stroke="#94a3b8" />
-                  <YAxis stroke="#94a3b8" tickFormatter={(value) => `€${(value/1000).toFixed(0)}k`} />
-                  <Tooltip 
+                  <YAxis stroke="#94a3b8" tickFormatter={(value) => `€${(value / 1000).toFixed(0)}k`} />
+                  <Tooltip
                     contentStyle={{ backgroundColor: '#1e293b', border: '1px solid #475569', borderRadius: '8px' }}
                     formatter={(value) => formatCurrency(value)}
                   />
@@ -571,7 +431,7 @@ const PortfolioApp = () => {
             <div className="p-6 border-b border-white/20">
               <div className="flex justify-between items-center">
                 <h2 className="text-xl font-bold text-white">Posizioni Correnti ({positions.length})</h2>
-                <button 
+                <button
                   onClick={() => setShowModal('transaction')}
                   className="px-4 py-2 bg-green-500 hover:bg-green-600 text-white rounded-lg flex items-center gap-2"
                 >
@@ -624,7 +484,7 @@ const PortfolioApp = () => {
             <div className="p-6 border-b border-white/20">
               <div className="flex justify-between items-center">
                 <h2 className="text-xl font-bold text-white">Transazioni ({transactions.length})</h2>
-                <button 
+                <button
                   onClick={() => setShowModal('transaction')}
                   className="px-4 py-2 bg-green-500 hover:bg-green-600 text-white rounded-lg flex items-center gap-2"
                 >
@@ -650,9 +510,8 @@ const PortfolioApp = () => {
                     <tr key={tx.transaction_id} className="hover:bg-white/5 transition-colors">
                       <td className="px-6 py-4 text-white">{new Date(tx.transaction_date).toLocaleDateString('it-IT')}</td>
                       <td className="px-6 py-4">
-                        <span className={`px-3 py-1 rounded-full text-xs font-medium ${
-                          tx.transaction_type === 'BUY' ? 'bg-green-500/20 text-green-300' : 'bg-red-500/20 text-red-300'
-                        }`}>
+                        <span className={`px-3 py-1 rounded-full text-xs font-medium ${tx.transaction_type === 'BUY' ? 'bg-green-500/20 text-green-300' : 'bg-red-500/20 text-red-300'
+                          }`}>
                           {tx.transaction_type}
                         </span>
                       </td>
@@ -668,66 +527,7 @@ const PortfolioApp = () => {
           </div>
         )}
 
-        {/* Allocation Tab */}
-        {activeTab === 'allocation' && allocation.length > 0 && (
-          <div className="space-y-6">
-            <div className="bg-white/10 backdrop-blur-lg rounded-2xl p-6 border border-white/20">
-              <div className="flex justify-between items-center mb-6">
-                <h2 className="text-xl font-bold text-white">Allocazione Dettagliata</h2>
-                <button
-                  onClick={() => setShowModal('target')}
-                  className="px-4 py-2 bg-purple-500 hover:bg-purple-600 text-white rounded-lg flex items-center gap-2"
-                >
-                  <Edit2 className="w-4 h-4" />
-                  Imposta Target
-                </button>
-              </div>
-              
-              <div className="space-y-4">
-                {allocation.map((item, idx) => {
-                  const targetKey = `target_${item.asset_type.toLowerCase()}`;
-                  const targetPct = targetForm[targetKey] || 0;
-                  const currentPct = parseFloat(item.percentage);
-                  const diff = currentPct - targetPct;
-                  const isAligned = Math.abs(diff) < 1;
 
-                  return (
-                    <div key={idx} className="bg-white/5 rounded-lg p-4">
-                      <div className="flex justify-between items-center mb-2">
-                        <div className="flex items-center gap-3">
-                          <span className="text-white font-medium">{item.asset_type}</span>
-                          <span className="text-blue-300 font-bold">{currentPct.toFixed(2)}%</span>
-                          {targetPct > 0 && (
-                            <span className={`text-sm ${isAligned ? 'text-green-400' : 'text-yellow-400'}`}>
-                              Target: {targetPct}% ({diff > 0 ? '+' : ''}{diff.toFixed(2)}%)
-                            </span>
-                          )}
-                        </div>
-                        <span className="text-blue-200">{formatCurrency(item.total_value)}</span>
-                      </div>
-                      <div className="relative w-full bg-white/20 rounded-full h-3">
-                        <div 
-                          className="h-3 rounded-full transition-all"
-                          style={{ 
-                            width: `${currentPct}%`,
-                            backgroundColor: COLORS[idx % COLORS.length]
-                          }}
-                        />
-                        {targetPct > 0 && (
-                          <div
-                            className="absolute top-0 h-3 w-0.5 bg-white"
-                            style={{ left: `${targetPct}%` }}
-                            title={`Target: ${targetPct}%`}
-                          />
-                        )}
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
-          </div>
-        )}
 
         {/* Geography Tab */}
         {activeTab === 'geography' && geoAllocation.length > 0 && (
@@ -737,9 +537,9 @@ const PortfolioApp = () => {
               <ResponsiveContainer width="100%" height={400}>
                 <BarChart data={geoAllocation.slice(0, 10)} layout="vertical">
                   <CartesianGrid strokeDasharray="3 3" stroke="#ffffff20" />
-                  <XAxis type="number" stroke="#94a3b8" tickFormatter={(value) => `€${(value/1000).toFixed(0)}k`} />
+                  <XAxis type="number" stroke="#94a3b8" tickFormatter={(value) => `€${(value / 1000).toFixed(0)}k`} />
                   <YAxis dataKey="name" type="category" stroke="#94a3b8" width={100} />
-                  <Tooltip 
+                  <Tooltip
                     contentStyle={{ backgroundColor: '#1e293b', border: '1px solid #475569', borderRadius: '8px' }}
                     formatter={(value) => formatCurrency(value)}
                   />
@@ -760,9 +560,9 @@ const PortfolioApp = () => {
                     </div>
                     <div className="text-lg font-bold text-white mb-2">{formatCurrency(geo.value)}</div>
                     <div className="w-full bg-white/20 rounded-full h-2">
-                      <div 
+                      <div
                         className="h-2 rounded-full"
-                        style={{ 
+                        style={{
                           width: `${pct}%`,
                           backgroundColor: COLORS[idx % COLORS.length]
                         }}
@@ -775,261 +575,24 @@ const PortfolioApp = () => {
           </div>
         )}
 
-        {/* Rebalance Tab */}
-        {activeTab === 'rebalance' && (
-          <div className="space-y-6">
-            <div className="bg-white/10 backdrop-blur-lg rounded-2xl p-6 border border-white/20">
-              <h2 className="text-2xl font-bold text-white mb-6">💰 Simulatore Allocazione Nuova Liquidità</h2>
-              
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
-                <div>
-                  <label className="block text-sm font-medium text-blue-200 mb-2">Nuova Liquidità da Investire</label>
-                  <input
-                    type="number"
-                    value={newCapital}
-                    onChange={(e) => setNewCapital(parseFloat(e.target.value) || 0)}
-                    className="w-full px-4 py-3 bg-white/10 border border-white/20 rounded-lg text-white text-xl font-bold focus:outline-none focus:ring-2 focus:ring-blue-500"
-                    placeholder="0.00"
-                    step="100"
-                  />
-                </div>
 
-                <div>
-                  <label className="block text-sm font-medium text-blue-200 mb-2">Modalità Allocazione</label>
-                  <div className="flex gap-3">
-                    <button
-                      onClick={() => setAllocationMode('target')}
-                      className={`flex-1 px-4 py-3 rounded-lg transition-all ${
-                        allocationMode === 'target'
-                          ? 'bg-blue-500 text-white'
-                          : 'bg-white/10 text-blue-200 hover:bg-white/20'
-                      }`}
-                    >
-                      Segui Target
-                    </button>
-                    <button
-                      onClick={() => setAllocationMode('manual')}
-                      className={`flex-1 px-4 py-3 rounded-lg transition-all ${
-                        allocationMode === 'manual'
-                          ? 'bg-purple-500 text-white'
-                          : 'bg-white/10 text-blue-200 hover:bg-white/20'
-                      }`}
-                    >
-                      Manuale
-                    </button>
-                  </div>
-                </div>
-              </div>
+      </div>
 
-              {allocationMode === 'manual' && (
-                <div className="bg-white/5 rounded-lg p-4 mb-6">
-                  <h3 className="text-white font-medium mb-4">Allocazione Manuale per Tipo Asset</h3>
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    {allocation.map(item => (
-                      <div key={item.asset_type}>
-                        <label className="block text-sm text-blue-200 mb-2">{item.asset_type}</label>
-                        <input
-                          type="number"
-                          value={manualAllocation[item.asset_type] || 0}
-                          onChange={(e) => setManualAllocation({
-                            ...manualAllocation,
-                            [item.asset_type]: parseFloat(e.target.value) || 0
-                          })}
-                          className="w-full px-3 py-2 bg-white/10 border border-white/20 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-purple-500"
-                          placeholder="0.00"
-                          step="10"
-                        />
-                      </div>
-                    ))}
-                  </div>
-                  {allocationMode === 'manual' && (
-                    <div className="mt-4 flex justify-between text-sm">
-                      <span className="text-blue-200">Totale allocato:</span>
-                      <span className="text-white font-bold">
-                        {formatCurrency(Object.values(manualAllocation).reduce((sum, val) => sum + (parseFloat(val) || 0), 0))}
-                      </span>
-                    </div>
-                  )}
-                </div>
-              )}
 
-              <button
-                onClick={simulateAllocation}
-                disabled={newCapital <= 0}
-                className="w-full px-6 py-4 bg-gradient-to-r from-blue-500 to-purple-500 hover:from-blue-600 hover:to-purple-600 text-white rounded-lg font-bold text-lg transition-all disabled:opacity-50 disabled:cursor-not-allowed"
-              >
-                🚀 Simula Allocazione
-              </button>
-            </div>
-          </div>
-        )}
 
-        {/* MODALS */}
-        
-        {/* Target Allocation Modal */}
-        {showModal === 'target' && (
-          <Modal title="Imposta Target Allocation" onClose={() => setShowModal(null)}>
-            <form onSubmit={saveTargetAllocation} className="space-y-4">
-              <div className="bg-blue-500/10 border border-blue-400/30 rounded-lg p-4 mb-4">
-                <p className="text-blue-200 text-sm">
-                  Imposta le percentuali target per ogni tipo di asset. La somma deve essere 100%.
-                </p>
-              </div>
 
-              {Object.entries(targetForm).map(([key, value]) => {
-                const assetType = key.replace('target_', '').charAt(0).toUpperCase() + key.replace('target_', '').slice(1);
-                return (
-                  <div key={key}>
-                    <label className="block text-sm font-medium text-blue-200 mb-2">
-                      {assetType} %
-                    </label>
-                    <input
-                      type="number"
-                      min="0"
-                      max="100"
-                      step="0.1"
-                      value={value}
-                      onChange={(e) => setTargetForm({
-                        ...targetForm,
-                        [key]: parseFloat(e.target.value) || 0
-                      })}
-                      className="w-full px-4 py-2 bg-white/10 border border-white/20 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
-                    />
-                  </div>
-                );
-              })}
 
-              <div className={`p-4 rounded-lg ${
-                Math.abs(Object.values(targetForm).reduce((a, b) => a + b, 0) - 100) < 0.01
-                  ? 'bg-green-500/10 border border-green-400/30'
-                  : 'bg-red-500/10 border border-red-400/30'
-              }`}>
-                <div className="flex justify-between items-center">
-                  <span className="text-white font-medium">Totale:</span>
-                  <span className="text-white font-bold text-xl">
-                    {Object.values(targetForm).reduce((a, b) => a + b, 0).toFixed(1)}%
-                  </span>
-                </div>
-              </div>
+      {/* MODALS */}
 
-              <div className="flex gap-3 justify-end">
-                <button
-                  type="button"
-                  onClick={() => setShowModal(null)}
-                  className="px-6 py-2 bg-white/10 hover:bg-white/20 text-white rounded-lg transition-all"
-                >
-                  Annulla
-                </button>
-                <button
-                  type="submit"
-                  className="px-6 py-2 bg-blue-500 hover:bg-blue-600 text-white rounded-lg flex items-center gap-2 transition-all"
-                >
-                  <Save className="w-4 h-4" />
-                  Salva Target
-                </button>
-              </div>
-            </form>
-          </Modal>
-        )}
+      {/* Target Allocation Modal */}
 
-        {/* Simulation Result Modal */}
-        {showModal === 'simulation-result' && simulationResult && (
-          <Modal title="📊 Risultato Simulazione" onClose={() => setShowModal(null)}>
-            <div className="space-y-6">
-              <div className="grid grid-cols-3 gap-4">
-                <div className="bg-blue-500/10 border border-blue-400/30 rounded-lg p-4">
-                  <div className="text-blue-200 text-sm mb-1">Valore Attuale</div>
-                  <div className="text-white font-bold text-xl">{formatCurrency(simulationResult.currentTotal)}</div>
-                </div>
-                <div className="bg-green-500/10 border border-green-400/30 rounded-lg p-4">
-                  <div className="text-green-200 text-sm mb-1">Nuova Liquidità</div>
-                  <div className="text-white font-bold text-xl">{formatCurrency(simulationResult.newCapital)}</div>
-                </div>
-                <div className="bg-purple-500/10 border border-purple-400/30 rounded-lg p-4">
-                  <div className="text-purple-200 text-sm mb-1">Valore Totale</div>
-                  <div className="text-white font-bold text-xl">{formatCurrency(simulationResult.newTotal)}</div>
-                </div>
-              </div>
 
-              {simulationResult.mode === 'manual' && simulationResult.remaining !== 0 && (
-                <div className={`p-4 rounded-lg ${
-                  simulationResult.remaining >= 0
-                    ? 'bg-yellow-500/10 border border-yellow-400/30'
-                    : 'bg-red-500/10 border border-red-400/30'
-                }`}>
-                  <div className="flex justify-between items-center">
-                    <span className="text-white">Liquidità Residua:</span>
-                    <span className="text-white font-bold">{formatCurrency(simulationResult.remaining)}</span>
-                  </div>
-                </div>
-              )}
+      {/* Simulation Result Modal */}
 
-              <div className="space-y-3">
-                <h3 className="text-white font-bold text-lg">Suggerimenti di Acquisto:</h3>
-                {Object.entries(simulationResult.suggestions).map(([assetType, data]) => (
-                  data.toInvest > 0 && (
-                    <div key={assetType} className="bg-white/5 rounded-lg p-4">
-                      <div className="flex justify-between items-start mb-3">
-                        <div>
-                          <div className="text-white font-medium text-lg">{assetType}</div>
-                          <div className="text-blue-300 text-sm">
-                            {data.currentPct?.toFixed(1)}% → {data.newPct?.toFixed(1)}%
-                            {simulationResult.mode === 'target' && data.targetPct && (
-                              <span className="text-green-400 ml-2">(Target: {data.targetPct}%)</span>
-                            )}
-                          </div>
-                        </div>
-                        <div className="text-right">
-                          <div className="text-green-400 font-bold text-xl">
-                            +{formatCurrency(data.toInvest)}
-                          </div>
-                          <div className="text-blue-200 text-sm">
-                            {formatCurrency(data.current)} → {formatCurrency(data.current + data.toInvest)}
-                          </div>
-                        </div>
-                      </div>
-                      <div className="w-full bg-white/20 rounded-full h-2">
-                        <div 
-                          className="h-2 rounded-full bg-gradient-to-r from-blue-500 to-green-500"
-                          style={{ width: `${data.newPct}%` }}
-                        />
-                      </div>
-                    </div>
-                  )
-                ))}
-              </div>
 
-              <div className="bg-gradient-to-r from-blue-500/20 to-purple-500/20 border border-blue-400/30 rounded-lg p-4">
-                <h4 className="text-white font-medium mb-3">💡 Consigli:</h4>
-                <ul className="space-y-2 text-blue-200 text-sm">
-                  {simulationResult.mode === 'target' ? (
-                    <>
-                      <li>• Seguendo i target impostati, mantieni il bilanciamento ideale del portafoglio</li>
-                      <li>• Considera di diversificare gli acquisti in più operazioni per mediare il prezzo</li>
-                      <li>• Verifica i costi di transazione prima di procedere</li>
-                    </>
-                  ) : (
-                    <>
-                      <li>• Hai scelto un'allocazione manuale personalizzata</li>
-                      <li>• Verifica che sia coerente con la tua strategia di investimento</li>
-                      <li>• Considera il rischio complessivo del portafoglio</li>
-                    </>
-                  )}
-                </ul>
-              </div>
-
-              <button
-                onClick={() => setShowModal(null)}
-                className="w-full px-6 py-3 bg-blue-500 hover:bg-blue-600 text-white rounded-lg font-medium transition-all"
-              >
-                Chiudi Simulazione
-              </button>
-            </div>
-          </Modal>
-        )}
-        
-        {/* Nuovo Portafoglio */}
-        {showModal === 'portfolio' && (
+      {/* Nuovo Portafoglio */}
+      {
+        showModal === 'portfolio' && (
           <Modal title="Nuovo Portafoglio" onClose={() => setShowModal(null)}>
             <form onSubmit={createPortfolio} className="space-y-4">
               <div>
@@ -1038,7 +601,7 @@ const PortfolioApp = () => {
                   type="text"
                   required
                   value={portfolioForm.name}
-                  onChange={(e) => setPortfolioForm({...portfolioForm, name: e.target.value})}
+                  onChange={(e) => setPortfolioForm({ ...portfolioForm, name: e.target.value })}
                   className="w-full px-4 py-2 bg-white/10 border border-white/20 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
                   placeholder="Es: Portafoglio Principale"
                 />
@@ -1048,7 +611,7 @@ const PortfolioApp = () => {
                 <input
                   type="text"
                   value={portfolioForm.broker}
-                  onChange={(e) => setPortfolioForm({...portfolioForm, broker: e.target.value})}
+                  onChange={(e) => setPortfolioForm({ ...portfolioForm, broker: e.target.value })}
                   className="w-full px-4 py-2 bg-white/10 border border-white/20 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
                   placeholder="Es: FinecoBank"
                 />
@@ -1057,7 +620,7 @@ const PortfolioApp = () => {
                 <label className="block text-sm font-medium text-blue-200 mb-2">Valuta</label>
                 <select
                   value={portfolioForm.currency}
-                  onChange={(e) => setPortfolioForm({...portfolioForm, currency: e.target.value})}
+                  onChange={(e) => setPortfolioForm({ ...portfolioForm, currency: e.target.value })}
                   className="w-full px-4 py-2 bg-white/10 border border-white/20 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
                 >
                   <option value="EUR">EUR</option>
@@ -1069,7 +632,7 @@ const PortfolioApp = () => {
                 <label className="block text-sm font-medium text-blue-200 mb-2">Note</label>
                 <textarea
                   value={portfolioForm.notes}
-                  onChange={(e) => setPortfolioForm({...portfolioForm, notes: e.target.value})}
+                  onChange={(e) => setPortfolioForm({ ...portfolioForm, notes: e.target.value })}
                   className="w-full px-4 py-2 bg-white/10 border border-white/20 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
                   rows="3"
                   placeholder="Note aggiuntive..."
@@ -1093,10 +656,12 @@ const PortfolioApp = () => {
               </div>
             </form>
           </Modal>
-        )}
+        )
+      }
 
-        {/* Nuovo Asset */}
-        {showModal === 'asset' && (
+      {/* Nuovo Asset */}
+      {
+        showModal === 'asset' && (
           <Modal title="Nuovo Asset" onClose={() => setShowModal(null)}>
             <form onSubmit={createAsset} className="space-y-4">
               <div className="grid grid-cols-2 gap-4">
@@ -1106,7 +671,7 @@ const PortfolioApp = () => {
                     type="text"
                     required
                     value={assetForm.isin}
-                    onChange={(e) => setAssetForm({...assetForm, isin: e.target.value.toUpperCase()})}
+                    onChange={(e) => setAssetForm({ ...assetForm, isin: e.target.value.toUpperCase() })}
                     className="w-full px-4 py-2 bg-white/10 border border-white/20 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
                     placeholder="ES: IE00B5BMR087"
                     maxLength="12"
@@ -1117,7 +682,7 @@ const PortfolioApp = () => {
                   <input
                     type="text"
                     value={assetForm.ticker}
-                    onChange={(e) => setAssetForm({...assetForm, ticker: e.target.value.toUpperCase()})}
+                    onChange={(e) => setAssetForm({ ...assetForm, ticker: e.target.value.toUpperCase() })}
                     className="w-full px-4 py-2 bg-white/10 border border-white/20 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
                     placeholder="ES: CSPX"
                   />
@@ -1129,7 +694,7 @@ const PortfolioApp = () => {
                   type="text"
                   required
                   value={assetForm.name}
-                  onChange={(e) => setAssetForm({...assetForm, name: e.target.value})}
+                  onChange={(e) => setAssetForm({ ...assetForm, name: e.target.value })}
                   className="w-full px-4 py-2 bg-white/10 border border-white/20 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
                   placeholder="Es: iShares Core S&P 500 UCITS ETF"
                 />
@@ -1139,7 +704,7 @@ const PortfolioApp = () => {
                   <label className="block text-sm font-medium text-blue-200 mb-2">Tipo Asset</label>
                   <select
                     value={assetForm.asset_type}
-                    onChange={(e) => setAssetForm({...assetForm, asset_type: e.target.value})}
+                    onChange={(e) => setAssetForm({ ...assetForm, asset_type: e.target.value })}
                     className="w-full px-4 py-2 bg-white/10 border border-white/20 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
                   >
                     <option value="Azionario">Azionario</option>
@@ -1154,7 +719,7 @@ const PortfolioApp = () => {
                   <label className="block text-sm font-medium text-blue-200 mb-2">Valuta</label>
                   <select
                     value={assetForm.currency}
-                    onChange={(e) => setAssetForm({...assetForm, currency: e.target.value})}
+                    onChange={(e) => setAssetForm({ ...assetForm, currency: e.target.value })}
                     className="w-full px-4 py-2 bg-white/10 border border-white/20 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
                   >
                     <option value="EUR">EUR</option>
@@ -1169,7 +734,7 @@ const PortfolioApp = () => {
                   <input
                     type="text"
                     value={assetForm.sector}
-                    onChange={(e) => setAssetForm({...assetForm, sector: e.target.value})}
+                    onChange={(e) => setAssetForm({ ...assetForm, sector: e.target.value })}
                     className="w-full px-4 py-2 bg-white/10 border border-white/20 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
                     placeholder="Es: Tecnologia"
                   />
@@ -1179,7 +744,7 @@ const PortfolioApp = () => {
                   <input
                     type="text"
                     value={assetForm.country}
-                    onChange={(e) => setAssetForm({...assetForm, country: e.target.value})}
+                    onChange={(e) => setAssetForm({ ...assetForm, country: e.target.value })}
                     className="w-full px-4 py-2 bg-white/10 border border-white/20 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
                     placeholder="Es: USA"
                   />
@@ -1203,10 +768,12 @@ const PortfolioApp = () => {
               </div>
             </form>
           </Modal>
-        )}
+        )
+      }
 
-        {/* Nuova Transazione */}
-        {showModal === 'transaction' && (
+      {/* Nuova Transazione */}
+      {
+        showModal === 'transaction' && (
           <Modal title="Nuova Transazione" onClose={() => setShowModal(null)}>
             <form onSubmit={createTransaction} className="space-y-4">
               <div>
@@ -1214,7 +781,7 @@ const PortfolioApp = () => {
                 <select
                   required
                   value={transactionForm.asset_id}
-                  onChange={(e) => setTransactionForm({...transactionForm, asset_id: e.target.value})}
+                  onChange={(e) => setTransactionForm({ ...transactionForm, asset_id: e.target.value })}
                   className="w-full px-4 py-2 bg-white/10 border border-white/20 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
                 >
                   <option value="">Seleziona asset...</option>
@@ -1230,7 +797,7 @@ const PortfolioApp = () => {
                   <label className="block text-sm font-medium text-blue-200 mb-2">Tipo</label>
                   <select
                     value={transactionForm.transaction_type}
-                    onChange={(e) => setTransactionForm({...transactionForm, transaction_type: e.target.value})}
+                    onChange={(e) => setTransactionForm({ ...transactionForm, transaction_type: e.target.value })}
                     className="w-full px-4 py-2 bg-white/10 border border-white/20 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
                   >
                     <option value="BUY">ACQUISTO</option>
@@ -1243,7 +810,7 @@ const PortfolioApp = () => {
                     type="date"
                     required
                     value={transactionForm.transaction_date}
-                    onChange={(e) => setTransactionForm({...transactionForm, transaction_date: e.target.value})}
+                    onChange={(e) => setTransactionForm({ ...transactionForm, transaction_date: e.target.value })}
                     className="w-full px-4 py-2 bg-white/10 border border-white/20 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
                   />
                 </div>
@@ -1256,7 +823,7 @@ const PortfolioApp = () => {
                     required
                     step="0.000001"
                     value={transactionForm.quantity}
-                    onChange={(e) => setTransactionForm({...transactionForm, quantity: parseFloat(e.target.value)})}
+                    onChange={(e) => setTransactionForm({ ...transactionForm, quantity: parseFloat(e.target.value) })}
                     className="w-full px-4 py-2 bg-white/10 border border-white/20 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
                     placeholder="0.00"
                   />
@@ -1268,7 +835,7 @@ const PortfolioApp = () => {
                     required
                     step="0.01"
                     value={transactionForm.price_per_share}
-                    onChange={(e) => setTransactionForm({...transactionForm, price_per_share: parseFloat(e.target.value)})}
+                    onChange={(e) => setTransactionForm({ ...transactionForm, price_per_share: parseFloat(e.target.value) })}
                     className="w-full px-4 py-2 bg-white/10 border border-white/20 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
                     placeholder="0.00"
                   />
@@ -1281,7 +848,7 @@ const PortfolioApp = () => {
                     type="number"
                     step="0.01"
                     value={transactionForm.commission}
-                    onChange={(e) => setTransactionForm({...transactionForm, commission: parseFloat(e.target.value)})}
+                    onChange={(e) => setTransactionForm({ ...transactionForm, commission: parseFloat(e.target.value) })}
                     className="w-full px-4 py-2 bg-white/10 border border-white/20 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
                     placeholder="0.00"
                   />
@@ -1292,7 +859,7 @@ const PortfolioApp = () => {
                     type="number"
                     step="0.01"
                     value={transactionForm.fees}
-                    onChange={(e) => setTransactionForm({...transactionForm, fees: parseFloat(e.target.value)})}
+                    onChange={(e) => setTransactionForm({ ...transactionForm, fees: parseFloat(e.target.value) })}
                     className="w-full px-4 py-2 bg-white/10 border border-white/20 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
                     placeholder="0.00"
                   />
@@ -1322,9 +889,10 @@ const PortfolioApp = () => {
               </div>
             </form>
           </Modal>
-        )}
-      </div>
-    </div>
+        )
+      }
+    </div >
+
   );
 };
 

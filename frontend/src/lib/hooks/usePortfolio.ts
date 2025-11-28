@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { portfoliosApi, analyticsApi, transactionsApi } from '@/lib/api';
-import type { Portfolio, Position, Transaction, Performance, Allocation, Snapshot, TargetAllocation, GeoAllocation } from '@/types';
+import type { Portfolio, Position, Transaction, Performance, Allocation, Snapshot, GeoAllocation } from '@/types';
 
 export const usePortfolio = (portfolioId: string | null) => {
   const [loading, setLoading] = useState(false);
@@ -12,7 +12,6 @@ export const usePortfolio = (portfolioId: string | null) => {
   const [allocation, setAllocation] = useState<Allocation[]>([]);
   const [snapshots, setSnapshots] = useState<Snapshot[]>([]);
   const [geoAllocation, setGeoAllocation] = useState<GeoAllocation[]>([]);
-  const [targetAllocation, setTargetAllocation] = useState<TargetAllocation | null>(null);
 
   const calculateGeoAllocation = (positionsData: Position[]) => {
     const geoMap: Record<string, number> = {};
@@ -49,15 +48,6 @@ export const usePortfolio = (portfolioId: string | null) => {
       setAllocation(allocData);
       setSnapshots(snapData);
       calculateGeoAllocation(posData);
-
-      // Load target allocation
-      try {
-        const targetData = await analyticsApi.getTargetAllocation(id);
-        setTargetAllocation(targetData);
-      } catch (error) {
-        // Target allocation might not exist
-        setTargetAllocation(null);
-      }
     } catch (error) {
       console.error('Error loading portfolio data:', error);
     } finally {
@@ -98,7 +88,6 @@ export const usePortfolio = (portfolioId: string | null) => {
     allocation,
     snapshots,
     geoAllocation,
-    targetAllocation,
     updatePrices,
     refreshData,
   };
