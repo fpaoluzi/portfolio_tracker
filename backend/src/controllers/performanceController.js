@@ -310,11 +310,10 @@ async function calculateMonthlyPerformance(req, res) {
     const { months = 12 } = req.body;
 
     const positionsResult = await pool.query(
-      `SELECT p.position_id, p.portfolio_id, p.asset_id, p.quantity,
-              p.average_buy_price, p.total_invested, a.ticker, a.isin, a.name
-       FROM positions p
-       JOIN assets a ON p.asset_id = a.asset_id
-       WHERE p.portfolio_id = $1 AND p.quantity > 0`,
+      `SELECT position_id, portfolio_id, asset_id, quantity,
+              average_buy_price, total_invested, ticker, isin, asset_name
+       FROM v_current_positions
+       WHERE portfolio_id = $1 AND quantity > 0`,
       [id]
     );
 
@@ -402,16 +401,15 @@ async function calculateMonthlyPerformance(req, res) {
           );
 
           snapshots.push({
-            asset: position.name,
+            asset: position.asset_name,
             month: monthYear,
             return_pct: monthReturnPct.toFixed(2),
           });
-
-          console.log(`  ✓ ${position.name}: ${monthReturnPct.toFixed(2)}%`);
+          console.log(`  ✓ ${position.asset_name}: ${monthReturnPct.toFixed(2)}%`);
         } catch (posError) {
-          console.error(`Errore posizione ${position.name}:`, posError.message);
+          console.error(`Errore posizione ${position.asset_name}:`, posError.message);
           errors.push({
-            asset: position.name,
+            asset: position.asset_name,
             month: monthYear,
             error: posError.message,
           });

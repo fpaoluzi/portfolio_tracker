@@ -484,13 +484,41 @@ const PortfolioApp = () => {
             <div className="p-6 border-b border-white/20">
               <div className="flex justify-between items-center">
                 <h2 className="text-xl font-bold text-white">Transazioni ({transactions.length})</h2>
-                <button
-                  onClick={() => setShowModal('transaction')}
-                  className="px-4 py-2 bg-green-500 hover:bg-green-600 text-white rounded-lg flex items-center gap-2"
-                >
-                  <Plus className="w-4 h-4" />
-                  Nuova Transazione
-                </button>
+                <div className="flex gap-3">
+                  {transactions.length > 0 && (
+                    <button
+                      onClick={async () => {
+                        if (window.confirm(`Sei sicuro di voler eliminare TUTTE le ${transactions.length} transazioni? Questa azione non può essere annullata.`)) {
+                          try {
+                            const response = await fetch(`${API_URL}/portfolios/${selectedPortfolio.portfolio_id}/transactions`, {
+                              method: 'DELETE'
+                            });
+                            if (response.ok) {
+                              await loadPortfolioData(selectedPortfolio.portfolio_id);
+                              alert('Tutte le transazioni sono state eliminate con successo');
+                            } else {
+                              alert('Errore durante l\'eliminazione delle transazioni');
+                            }
+                          } catch (err) {
+                            console.error('Errore eliminazione transazioni:', err);
+                            alert('Errore durante l\'eliminazione delle transazioni');
+                          }
+                        }
+                      }}
+                      className="px-4 py-2 bg-red-500 hover:bg-red-600 text-white rounded-lg flex items-center gap-2"
+                    >
+                      <Trash2 className="w-4 h-4" />
+                      Elimina Tutte
+                    </button>
+                  )}
+                  <button
+                    onClick={() => setShowModal('transaction')}
+                    className="px-4 py-2 bg-green-500 hover:bg-green-600 text-white rounded-lg flex items-center gap-2"
+                  >
+                    <Plus className="w-4 h-4" />
+                    Nuova Transazione
+                  </button>
+                </div>
               </div>
             </div>
             <div className="overflow-x-auto">

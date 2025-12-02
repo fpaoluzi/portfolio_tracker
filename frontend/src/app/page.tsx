@@ -288,6 +288,7 @@ function HomeContent() {
     commission: acc.commission + Number(tx.commission),
     fees: acc.fees + Number(tx.fees)
   }), { buy: 0, sell: 0, commission: 0, fees: 0 });
+  const transactionNetBalance = transactionTotals.buy - transactionTotals.sell - transactionTotals.commission - transactionTotals.fees;
 
   const filteredAssets = filterAndSortAssets();
 
@@ -849,6 +850,32 @@ function HomeContent() {
                   Transazioni ({filteredTransactions.length})
                 </h2>
                 <div className="flex gap-3">
+                  {filteredTransactions.length > 0 && (
+                    <Button
+                      variant="danger"
+                      icon={Trash2}
+                      onClick={async () => {
+                        if (window.confirm(`Sei sicuro di voler eliminare TUTTE le ${filteredTransactions.length} transazioni? Questa azione non può essere annullata.`)) {
+                          try {
+                            const response = await fetch(`http://localhost:3001/api/portfolios/${selectedPortfolio?.portfolio_id}/transactions`, {
+                              method: 'DELETE'
+                            });
+                            if (response.ok) {
+                              await refreshData();
+                              alert('Tutte le transazioni sono state eliminate con successo');
+                            } else {
+                              alert('Errore durante l\'eliminazione delle transazioni');
+                            }
+                          } catch (err) {
+                            console.error('Errore eliminazione transazioni:', err);
+                            alert('Errore durante l\'eliminazione delle transazioni');
+                          }
+                        }
+                      }}
+                    >
+                      Elimina Tutte
+                    </Button>
+                  )}
                   <Button
                     variant="warning"
                     icon={Upload}
@@ -887,7 +914,11 @@ function HomeContent() {
               </div>
 
               {/* Totali */}
-              <div className="grid grid-cols-4 gap-4">
+              <div className="grid grid-cols-5 gap-4">
+                <div className="bg-white/5 rounded-lg p-4">
+                  <div className="text-xs text-blue-300 mb-1">Saldo Netto</div>
+                  <div className={`text-lg font-bold ${transactionNetBalance >= 0 ? 'text-green-400' : 'text-red-400'}`}>{formatCurrency(transactionNetBalance)}</div>
+                </div>
                 <div className="bg-white/5 rounded-lg p-4">
                   <div className="text-xs text-blue-300 mb-1">Acquisti Totali</div>
                   <div className="text-lg font-bold text-green-400">{formatCurrency(transactionTotals.buy)}</div>
@@ -952,6 +983,18 @@ function HomeContent() {
                     >
                       Totale {transactionSort.field === 'total_amount' && (transactionSort.direction === 'asc' ? '▲' : '▼')}
                     </th>
+                    <th
+                      className="px-6 py-3 text-right text-xs font-medium text-blue-200 uppercase cursor-pointer hover:text-white"
+                      onClick={() => toggleSort('transaction', 'commission')}
+                    >
+                      Commissioni {transactionSort.field === 'commission' && (transactionSort.direction === 'asc' ? '▲' : '▼')}
+                    </th>
+                    <th
+                      className="px-6 py-3 text-right text-xs font-medium text-blue-200 uppercase cursor-pointer hover:text-white"
+                      onClick={() => toggleSort('transaction', 'fees')}
+                    >
+                      Costi Amm. {transactionSort.field === 'fees' && (transactionSort.direction === 'asc' ? '▲' : '▼')}
+                    </th>
                     <th className="px-6 py-3 text-center text-xs font-medium text-blue-200 uppercase">
                       Azioni
                     </th>
@@ -992,6 +1035,12 @@ function HomeContent() {
                       </td>
                       <td className="px-6 py-4 text-right text-white font-bold">
                         {formatCurrency(tx.total_amount)}
+                      </td>
+                      <td className="px-6 py-4 text-right text-white">
+                        {formatCurrency(tx.commission || 0)}
+                      </td>
+                      <td className="px-6 py-4 text-right text-white">
+                        {formatCurrency(tx.fees || 0)}
                       </td>
                       <td className="px-6 py-4">
                         <div className="flex items-center justify-center gap-2">

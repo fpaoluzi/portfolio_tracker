@@ -17,7 +17,7 @@ async function updatePortfolioPrices(req, res) {
     // Recupera asset con posizioni attive nel portafoglio
     const result = await pool.query(
       `SELECT DISTINCT a.asset_id, a.ticker, a.isin, a.name
-       FROM positions p
+       FROM v_current_positions p
        JOIN assets a ON p.asset_id = a.asset_id
        WHERE p.portfolio_id = $1 AND p.quantity > 0`,
       [id]

@@ -29,19 +29,11 @@ const {
 async function getCurrentAllocation(portfolioId) {
     const result = await pool.query(
         `SELECT 
-      a.asset_type as category_name,
-      SUM(pos.quantity * COALESCE(ph.close_price, pos.average_buy_price)) as current_value
-    FROM positions pos
-    JOIN assets a ON pos.asset_id = a.asset_id
-    LEFT JOIN LATERAL (
-      SELECT close_price
-      FROM price_history
-      WHERE asset_id = pos.asset_id
-      ORDER BY price_date DESC
-      LIMIT 1
-    ) ph ON true
-    WHERE pos.portfolio_id = $1 AND pos.quantity > 0
-    GROUP BY a.asset_type`,
+      asset_type as category_name,
+      SUM(current_value) as current_value
+    FROM v_current_positions
+    WHERE portfolio_id = $1 AND quantity > 0
+    GROUP BY asset_type`,
         [portfolioId]
     );
 

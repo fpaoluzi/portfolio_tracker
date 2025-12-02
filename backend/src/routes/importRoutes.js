@@ -4,12 +4,12 @@
 
 const express = require('express');
 const upload = require('../config/upload');
+const { importExcel } = require('../controllers/importController');
 
 const router = express.Router();
 
-// Placeholder - importController will be created
-router.post('/excel', upload.single('file'), async (req, res) => {
-  res.status(501).json({ error: 'Import controller in development' });
-});
+// Import transactions from Excel file
+router.post('/excel', upload.single('file'), importExcel);
 
 module.exports = router;
+

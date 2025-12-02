@@ -194,9 +194,39 @@ async function deleteTransaction(req, res) {
   }
 }
 
+/**
+ * DELETE /api/portfolios/:id/transactions
+ * Elimina tutte le transazioni di un portafoglio
+ */
+async function deleteAllPortfolioTransactions(req, res) {
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+
+    const { id } = req.params;
+    const result = await client.query(
+      'DELETE FROM transactions WHERE portfolio_id = $1 RETURNING transaction_id',
+      [id]
+    );
+
+    await client.query('COMMIT');
+    res.json({
+      message: `${result.rows.length} transazioni eliminate con successo`,
+      deletedCount: result.rows.length
+    });
+  } catch (err) {
+    await client.query('ROLLBACK');
+    console.error(err);
+    res.status(500).json({ error: "Errore nell'eliminazione delle transazioni" });
+  } finally {
+    client.release();
+  }
+}
+
 module.exports = {
   getPortfolioTransactions,
   createTransaction,
   updateTransaction,
   deleteTransaction,
+  deleteAllPortfolioTransactions,
 };

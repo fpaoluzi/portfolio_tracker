@@ -14,7 +14,7 @@ const {
   getPortfolioSnapshots,
 } = require('../controllers/portfolioController');
 const { getPortfolioPositions } = require('../controllers/positionController');
-const { getPortfolioTransactions } = require('../controllers/transactionController');
+const { getPortfolioTransactions, deleteAllPortfolioTransactions } = require('../controllers/transactionController');
 
 const router = express.Router();
 
@@ -29,5 +29,7 @@ router.get('/:id/allocation', getPortfolioAllocation);
 router.get('/:id/snapshots', getPortfolioSnapshots);
 router.get('/:id/positions', getPortfolioPositions);
 router.get('/:id/transactions', getPortfolioTransactions);
+router.delete('/:id/transactions', deleteAllPortfolioTransactions);
 
 module.exports = router;
+

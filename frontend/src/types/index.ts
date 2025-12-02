@@ -79,6 +79,7 @@ export interface Position {
   current_price: number | string;
   current_value: number | string;
   total_invested: number | string;
+  gross_buy_invested?: number | string;
   gain_loss: number | string;
   gain_loss_pct: number | string;
   last_price_date?: string;
