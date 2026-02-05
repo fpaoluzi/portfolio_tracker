@@ -6,7 +6,7 @@ import {
   getMultipleAssetsComposition,
   getMultipleAssetsRiskStats,
 } from '../../../lib/api';
-import { assetsApi } from '../../../lib/api';
+import { assetsApi, analyticsApi } from '../../../lib/api';
 import { isEquityType, isBondType, canHaveComposition } from '../../../lib/utils/assetHelpers';
 import type { Asset } from '../../../types';
 
@@ -34,6 +34,7 @@ export const PortfolioAnalysis: React.FC<PortfolioAnalysisProps> = ({
   const [error, setError] = useState<string | null>(null);
   const [isAssetModalOpen, setIsAssetModalOpen] = useState(false);
   const [availableAssets, setAvailableAssets] = useState<Asset[]>([]);
+  const [assetWeights, setAssetWeights] = useState<Record<string, number>>({});
   const [analysisType, setAnalysisType] = useState<'equity' | 'bond'>('equity');
 
 
@@ -43,11 +44,27 @@ export const PortfolioAnalysis: React.FC<PortfolioAnalysisProps> = ({
       if (!selectedPortfolioId) return;
 
       try {
-        // Get all assets that can have composition
-        // Note: Assets don't have portfolio_id, they're linked via transactions
-        // For now, show all composable assets
-        const allAssets = await assetsApi.getAll();
-        const composableAssets = allAssets.filter(a => canHaveComposition(a.asset_type));
+        const [allAssets, positions] = await Promise.all([
+          assetsApi.getAll(),
+          analyticsApi.getPositions(selectedPortfolioId),
+        ]);
+
+        // Build weight map from positions
+        const positionMap = new Map(positions.map(p => [p.asset_id, typeof p.current_value === 'number' ? p.current_value : parseFloat(p.current_value || '0')]));
+        const totalValue = Array.from(positionMap.values()).reduce((sum, val) => sum + val, 0);
+
+        const weights: Record<string, number> = {};
+        positionMap.forEach((value, assetId) => {
+          if (totalValue > 0) {
+            weights[assetId] = Math.round((value / totalValue) * 100);
+          }
+        });
+        setAssetWeights(weights);
+
+        // Filter: composable assets that exist in this portfolio with value > 0
+        const composableAssets = allAssets.filter(a =>
+          canHaveComposition(a.asset_type) && (positionMap.get(a.asset_id) || 0) > 0
+        );
         setAvailableAssets(composableAssets);
       } catch (err) {
         console.error('Error fetching assets:', err);
@@ -63,6 +80,7 @@ export const PortfolioAnalysis: React.FC<PortfolioAnalysisProps> = ({
     setComposition(null);
     setRiskStats(null);
     setError(null);
+    setAssetWeights({});
   }, [selectedPortfolioId]);
 
   // Fetch composition when selected assets change
@@ -254,6 +272,23 @@ export const PortfolioAnalysis: React.FC<PortfolioAnalysisProps> = ({
               Seleziona uno o più asset per visualizzare l'analisi di composizione
             </p>
 
+            <div className="flex gap-2">
+              <Button
+                onClick={() => setSelectedAssets([...availableAssets])}
+                variant="secondary"
+                className="text-sm"
+              >
+                Seleziona tutto
+              </Button>
+              <Button
+                onClick={() => setSelectedAssets([])}
+                variant="secondary"
+                className="text-sm"
+              >
+                Deseleziona tutto
+              </Button>
+            </div>
+
             <div className="space-y-2 max-h-96 overflow-y-auto">
               {availableAssets.map((asset) => (
                 <label
@@ -267,7 +302,14 @@ export const PortfolioAnalysis: React.FC<PortfolioAnalysisProps> = ({
                     className="w-4 h-4"
                   />
                   <div className="flex-1">
-                    <div className="text-white font-medium">{asset.name}</div>
+                    <div className="text-white font-medium">
+                      {asset.name}
+                      {assetWeights[asset.asset_id] !== undefined && (
+                        <span className="ml-2 text-blue-400 font-normal">
+                          {assetWeights[asset.asset_id]}%
+                        </span>
+                      )}
+                    </div>
                     <div className="text-gray-400 text-sm">{asset.ticker || 'N/A'}</div>
                   </div>
                   <div className="text-xs text-gray-500 bg-white/10 px-2 py-1 rounded">
