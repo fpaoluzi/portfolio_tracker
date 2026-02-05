@@ -57,9 +57,23 @@ export const PortfolioAnalysis: React.FC<PortfolioAnalysisProps> = ({
     fetchAssets();
   }, [selectedPortfolioId]);
 
+  // Reset asset selection when portfolio changes
+  useEffect(() => {
+    setSelectedAssets([]);
+    setComposition(null);
+    setRiskStats(null);
+    setError(null);
+  }, [selectedPortfolioId]);
+
   // Fetch composition when selected assets change
   useEffect(() => {
     const fetchComposition = async () => {
+      if (!selectedPortfolioId) {
+        setComposition(null);
+        setRiskStats(null);
+        return;
+      }
+
       if (selectedAssets.length === 0) {
         setComposition(null);
         setRiskStats(null);
@@ -73,11 +87,11 @@ export const PortfolioAnalysis: React.FC<PortfolioAnalysisProps> = ({
         const assetIds = selectedAssets.map(a => a.asset_id);
 
         // Fetch composition
-        const comp = await getMultipleAssetsComposition(assetIds);
+        const comp = await getMultipleAssetsComposition(assetIds, selectedPortfolioId!);
         setComposition(comp);
 
         // Fetch risk stats
-        const stats = await getMultipleAssetsRiskStats(assetIds);
+        const stats = await getMultipleAssetsRiskStats(assetIds, selectedPortfolioId!);
         setRiskStats(stats);
 
         // Determine analysis type based on selected assets
@@ -101,7 +115,7 @@ export const PortfolioAnalysis: React.FC<PortfolioAnalysisProps> = ({
     };
 
     fetchComposition();
-  }, [selectedAssets]);
+  }, [selectedAssets, selectedPortfolioId]);
 
   const handleAssetToggle = (asset: Asset) => {
     setSelectedAssets(prev => {
@@ -118,20 +132,23 @@ export const PortfolioAnalysis: React.FC<PortfolioAnalysisProps> = ({
     setSelectedAssets([...selectedAssets]); // Trigger re-fetch
   };
 
-  // Debug logging
-  console.log('PortfolioAnalysis state:', {
-    selectedPortfolioId,
-    selectedAssetsCount: selectedAssets.length,
-    selectedAssets: selectedAssets.map(a => ({ id: a.asset_id, name: a.name })),
-    availableAssetsCount: availableAssets.length,
-    hasComposition: !!composition,
-    composition,
-    hasRiskStats: !!riskStats,
-    riskStats,
-    loading,
-    error,
-    analysisType
-  });
+  if (!selectedPortfolioId) {
+    return (
+      <div className="space-y-6">
+        <div className="flex items-center justify-between">
+          <div>
+            <h2 className="text-3xl font-bold text-white flex items-center gap-3">
+              <TrendingUp className="w-8 h-8 text-blue-400" />
+              Analisi Composizione
+            </h2>
+          </div>
+        </div>
+        <div className="bg-blue-500/10 border border-blue-500/30 rounded-lg p-6 text-center">
+          <p className="text-blue-200 text-lg">Seleziona un portafoglio per visualizzare l'analisi di composizione</p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6">
