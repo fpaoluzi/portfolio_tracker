@@ -21,6 +21,7 @@ const REGION_TO_COUNTRIES: Record<string, string[]> = {
     'Portogallo': ['Portugal'],
     'Finlandia': ['Finland'],
     'USA': ['United States of America'],
+    'Stati Uniti': ['United States of America'],
     'Giappone': ['Japan'],
     'Cina': ['China'],
     'India': ['India'],
@@ -30,6 +31,13 @@ const REGION_TO_COUNTRIES: Record<string, string[]> = {
     'Messico': ['Mexico'],
     'Corea del Sud': ['South Korea'],
     'Taiwan': ['Taiwan'],
+    'Svizzera': ['Switzerland'],
+    'Svezia': ['Sweden'],
+    'Danimarca': ['Denmark'],
+    'Irlanda': ['Ireland'],
+    'Singapore': ['Singapore'],
+    'Hong Kong': ['Hong Kong'],
+    'Israel': ['Israel'],
 };
 
 interface GeographySectionProps {

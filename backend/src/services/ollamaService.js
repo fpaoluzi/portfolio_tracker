@@ -43,13 +43,13 @@ OUTPUT RICHIESTO - JSON puro (no markdown, no testo extra):
   ],
   "sectors": [
     {
-      "sector_name": "Technology",
+      "sector_name": "Informatica",
       "weight_percent": 0.245
     }
   ],
   "regions": [
     {
-      "region_name": "United States",
+      "region_name": "Stati Uniti",
       "weight_percent": 0.65
     }
   ],
@@ -69,6 +69,10 @@ REGOLE:
 - distribution_policy: solo "Accumulating" o "Distributing"
 - Se dato assente: array vuoto [] o null
 - Estrai tutte le holdings visibili (max 15)
+- IMPORTANTE: usa SEMPRE nomi settori in ITALIANO:
+  Informatica, Finanza, Salute, Beni voluttuari, Beni di prima necessità, Telecomunicazioni, Industria, Materie prime, Energia, Servizi di pubblica utilità, Immobiliare
+- IMPORTANTE: usa SEMPRE nomi regioni in ITALIANO:
+  Stati Uniti, Regno Unito, Giappone, Cina, Germania, Francia, Svizzera, Paesi Bassi, Canada, Australia, Italia, Spagna, Svezia, Danimarca, India, Hong Kong, Singapore
 
 TESTO DA ANALIZZARE:
 ${html}`;

@@ -7,6 +7,17 @@ const pool = require('../config/database');
 const { scrapeJustETF } = require('../services/justETFScraper');
 const { extractETFDataFromHTML, checkOllamaAvailability } = require('../services/ollamaService');
 
+/**
+ * Normalize a percent value to fraction (0-1).
+ * Handles both percentage format (24.5 → 0.245) and fraction format (0.245 → 0.245).
+ * Values > 1 are treated as percentages and divided by 100.
+ */
+function toFraction(value) {
+  const num = typeof value === 'string' ? parseFloat(value) : value;
+  if (isNaN(num)) return 0;
+  return num > 1 ? num / 100 : num;
+}
+
 // Import moduli di analisi specializzati
 const holdingsAnalysis = require('./composition/holdingsAnalysis');
 const sectorAnalysis = require('./composition/sectorAnalysis');
@@ -163,7 +174,7 @@ async function fetchAndSaveComposition(req, res) {
       await client.query(
         `INSERT INTO etf_holdings (asset_id, holding_symbol, holding_name, holding_percent, rank_position)
          VALUES ($1, $2, $3, $4, $5)`,
-        [assetId, holding.holding_symbol || null, holding.holding_name, holding.holding_percent / 100, holding.rank_position]
+        [assetId, holding.holding_symbol || null, holding.holding_name, toFraction(holding.holding_percent), holding.rank_position]
       );
     }
 
@@ -173,7 +184,7 @@ async function fetchAndSaveComposition(req, res) {
       await client.query(
         `INSERT INTO etf_sector_weights (asset_id, sector_name, weight_percent)
          VALUES ($1, $2, $3)`,
-        [assetId, sector.sector_name, sector.weight_percent / 100]
+        [assetId, sector.sector_name, toFraction(sector.weight_percent)]
       );
     }
 
@@ -183,7 +194,7 @@ async function fetchAndSaveComposition(req, res) {
       await client.query(
         `INSERT INTO etf_geographic_weights (asset_id, region_name, weight_percent)
          VALUES ($1, $2, $3)`,
-        [assetId, region.region_name, region.weight_percent / 100]
+        [assetId, region.region_name, toFraction(region.weight_percent)]
       );
     }
 
@@ -193,7 +204,7 @@ async function fetchAndSaveComposition(req, res) {
       await client.query(
         `INSERT INTO etf_asset_allocation (asset_id, allocation_type, weight_percent)
          VALUES ($1, $2, $3)`,
-        [assetId, alloc.allocation_type, alloc.weight_percent / 100]
+        [assetId, alloc.allocation_type, toFraction(alloc.weight_percent)]
       );
     }
 
@@ -204,7 +215,7 @@ async function fetchAndSaveComposition(req, res) {
         await client.query(
           `INSERT INTO etf_bond_ratings (asset_id, rating_category, weight_percent)
            VALUES ($1, $2, $3)`,
-          [assetId, rating.rating_category, rating.weight_percent / 100]
+          [assetId, rating.rating_category, toFraction(rating.weight_percent)]
         );
       }
     }
@@ -216,7 +227,7 @@ async function fetchAndSaveComposition(req, res) {
         await client.query(
           `INSERT INTO etf_bond_maturity (asset_id, maturity_range, weight_percent, avg_duration_years)
            VALUES ($1, $2, $3, $4)`,
-          [assetId, maturity.maturity_range, maturity.weight_percent / 100, maturity.avg_duration_years || null]
+          [assetId, maturity.maturity_range, toFraction(maturity.weight_percent), maturity.avg_duration_years || null]
         );
       }
     }
@@ -380,28 +391,28 @@ async function bulkUpdateCompositions(req, res) {
             await client.query(
               `INSERT INTO etf_holdings (asset_id, holding_symbol, holding_name, holding_percent, rank_position)
                VALUES ($1, $2, $3, $4, $5)`,
-              [asset.asset_id, holding.holding_symbol || null, holding.holding_name, holding.holding_percent / 100, holding.rank_position]
+              [asset.asset_id, holding.holding_symbol || null, holding.holding_name, toFraction(holding.holding_percent), holding.rank_position]
             );
           }
 
           for (const sector of sectors) {
             await client.query(
               `INSERT INTO etf_sector_weights (asset_id, sector_name, weight_percent) VALUES ($1, $2, $3)`,
-              [asset.asset_id, sector.sector_name, sector.weight_percent / 100]
+              [asset.asset_id, sector.sector_name, toFraction(sector.weight_percent)]
             );
           }
 
           for (const region of regions) {
             await client.query(
               `INSERT INTO etf_geographic_weights (asset_id, region_name, weight_percent) VALUES ($1, $2, $3)`,
-              [asset.asset_id, region.region_name, region.weight_percent / 100]
+              [asset.asset_id, region.region_name, toFraction(region.weight_percent)]
             );
           }
 
           for (const alloc of allocation) {
             await client.query(
               `INSERT INTO etf_asset_allocation (asset_id, allocation_type, weight_percent) VALUES ($1, $2, $3)`,
-              [asset.asset_id, alloc.allocation_type, alloc.weight_percent / 100]
+              [asset.asset_id, alloc.allocation_type, toFraction(alloc.weight_percent)]
             );
           }
 
@@ -409,7 +420,7 @@ async function bulkUpdateCompositions(req, res) {
             for (const rating of bondRatings) {
               await client.query(
                 `INSERT INTO etf_bond_ratings (asset_id, rating_category, weight_percent) VALUES ($1, $2, $3)`,
-                [asset.asset_id, rating.rating_category, rating.weight_percent / 100]
+                [asset.asset_id, rating.rating_category, toFraction(rating.weight_percent)]
               );
             }
           }
@@ -418,7 +429,7 @@ async function bulkUpdateCompositions(req, res) {
             for (const maturity of bondMaturity) {
               await client.query(
                 `INSERT INTO etf_bond_maturity (asset_id, maturity_range, weight_percent, avg_duration_years) VALUES ($1, $2, $3, $4)`,
-                [asset.asset_id, maturity.maturity_range, maturity.weight_percent / 100, maturity.avg_duration_years || null]
+                [asset.asset_id, maturity.maturity_range, toFraction(maturity.weight_percent), maturity.avg_duration_years || null]
               );
             }
           }
@@ -609,7 +620,7 @@ async function saveManualComposition(req, res) {
         await client.query(
           `INSERT INTO etf_holdings (asset_id, holding_symbol, holding_name, holding_percent, rank_position)
            VALUES ($1, $2, $3, $4, $5)`,
-          [assetId, holding.symbol || null, holding.name, holding.percent / 100, holding.rank || 0]
+          [assetId, holding.symbol || null, holding.name, toFraction(holding.percent), holding.rank || 0]
         );
         stats.holdings++;
       }
@@ -622,7 +633,7 @@ async function saveManualComposition(req, res) {
         await client.query(
           `INSERT INTO etf_sector_weights (asset_id, sector_name, weight_percent)
            VALUES ($1, $2, $3)`,
-          [assetId, sector.name, sector.percent / 100]
+          [assetId, sector.name, toFraction(sector.percent)]
         );
         stats.sectors++;
       }
@@ -635,7 +646,7 @@ async function saveManualComposition(req, res) {
         await client.query(
           `INSERT INTO etf_geographic_weights (asset_id, region_name, weight_percent)
            VALUES ($1, $2, $3)`,
-          [assetId, region.name, region.percent / 100]
+          [assetId, region.name, toFraction(region.percent)]
         );
         stats.regions++;
       }
@@ -648,7 +659,7 @@ async function saveManualComposition(req, res) {
         await client.query(
           `INSERT INTO etf_asset_allocation (asset_id, allocation_type, weight_percent)
            VALUES ($1, $2, $3)`,
-          [assetId, alloc.type, alloc.percent / 100]
+          [assetId, alloc.type, toFraction(alloc.percent)]
         );
         stats.allocation++;
       }
@@ -661,7 +672,7 @@ async function saveManualComposition(req, res) {
         await client.query(
           `INSERT INTO etf_bond_ratings (asset_id, rating_category, weight_percent)
            VALUES ($1, $2, $3)`,
-          [assetId, rating.category, rating.percent / 100]
+          [assetId, rating.category, toFraction(rating.percent)]
         );
         stats.bondRatings++;
       }
@@ -674,7 +685,7 @@ async function saveManualComposition(req, res) {
         await client.query(
           `INSERT INTO etf_bond_maturity (asset_id, maturity_range, weight_percent, avg_duration_years)
            VALUES ($1, $2, $3, $4)`,
-          [assetId, maturity.range, maturity.percent / 100, maturity.duration || null]
+          [assetId, maturity.range, toFraction(maturity.percent), maturity.duration || null]
         );
         stats.bondMaturity++;
       }
