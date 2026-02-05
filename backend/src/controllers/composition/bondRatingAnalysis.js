@@ -205,6 +205,7 @@ async function getBondRatingsByMultiplePortfolios(req, res) {
 }
 
 async function getBondRatingsByMultipleAssets(req, res) {
+    // Weighted calculation: verified 2026-02-05 — uses v_current_positions for portfolio weights
     try {
         const { assetIds, portfolioId, expand = 'false', limit = 15 } = req.query;
 

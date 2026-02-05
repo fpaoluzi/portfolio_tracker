@@ -220,6 +220,7 @@ async function getSectorsByMultiplePortfolios(req, res) {
  * Recupera composizione settoriale aggregata per più asset
  */
 async function getSectorsByMultipleAssets(req, res) {
+  // Weighted calculation: verified 2026-02-05 — uses v_current_positions for portfolio weights
   try {
     const { assetIds, portfolioId, expand = 'false', limit = 15 } = req.query;
 

@@ -11,6 +11,7 @@ const pool = require('../../config/database');
  * Query params: assetIds, portfolioId
  */
 async function getRiskStatsByMultipleAssets(req, res) {
+  // Weighted calculation: verified 2026-02-05 — uses v_current_positions for portfolio weights
   try {
     const { assetIds, portfolioId } = req.query;
 
