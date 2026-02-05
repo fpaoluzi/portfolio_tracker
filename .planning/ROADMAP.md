@@ -11,20 +11,13 @@
 **Goal:** Fix incorrect allocation percentages in portfolio composition analysis when multiple assets are selected.
 
 ### Phase 1: Fix Composition Percentages (Bug Fix)
-**Status:** Planned
+**Status:** Complete ✓
+**Completed:** 2026-02-05
 **Goal:** Correct the weighted percentage calculation across all 6 composition analysis controllers and ensure the frontend passes portfolio context for accurate weighted averages.
-**Plans:** 2 plans
-
-**Scope:**
-- Frontend: pass `portfolioId` to composition API calls
-- Backend: ensure all 6 multi-asset composition endpoints use portfolio-weighted calculations
-- Affected controllers: holdings, sectors, geographic, allocation, bond-ratings, bond-maturity
-- Verify percentages sum correctly and reflect actual portfolio weights
-
-**Root cause:** `PortfolioAnalysis.tsx` calls `getMultipleAssetsComposition(assetIds)` without `portfolioId`, triggering the `AVG()` (simple mean) branch in all backend controllers instead of the weighted `SUM(asset_weight * weight_percent)` branch.
+**Verification:** 10/10 must-haves passed
 
 Plans:
-- [ ] 01-01-PLAN.md — Verify and harden backend composition controllers' weighted calculation branches
-- [ ] 01-02-PLAN.md — Fix frontend portfolioId parameter passing and add UX improvements
+- [x] 01-01-PLAN.md — Backend controller audit & hardening (verified weighted patterns)
+- [x] 01-02-PLAN.md — Frontend portfolioId fix + UX improvements (Select All, asset weights, zero-value exclusion)
 
 ---
