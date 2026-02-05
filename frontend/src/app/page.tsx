@@ -679,7 +679,7 @@ function HomeContent() {
                 <select
                   value={positionTypeFilter}
                   onChange={(e) => setPositionTypeFilter(e.target.value)}
-                  className="px-4 py-2 bg-white/10 border border-white/20 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  className="px-4 py-2 bg-white/10 border border-white/20 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-blue-500 [&>option]:bg-slate-800 [&>option]:text-white"
                 >
                   <option value="">Tutti i tipi</option>
                   <option value="Azionario">Azionario</option>
